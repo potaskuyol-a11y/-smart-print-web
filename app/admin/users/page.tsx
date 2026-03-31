@@ -15,7 +15,7 @@ interface Profile {
 
 const roleLabels: Record<string, string> = {
   admin: 'Администратор',
-  seller: 'Продавец',
+  manager_sales: 'Менеджер по продажам',
   competence_center: 'Центр компетенций',
   manager: 'Руководитель',
   partner: 'Партнёр',
@@ -23,7 +23,7 @@ const roleLabels: Record<string, string> = {
 
 const roleColors: Record<string, string> = {
   admin: 'bg-red-50 text-red-700',
-  seller: 'bg-blue-50 text-blue-700',
+  manager_sales: 'bg-blue-50 text-blue-700',
   competence_center: 'bg-purple-50 text-purple-700',
   manager: 'bg-amber-50 text-amber-700',
   partner: 'bg-green-50 text-green-700',
@@ -265,8 +265,8 @@ export default function AdminUsersPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {Object.entries(roleLabels).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
+  <option key={value} value={value}>{label}</option>
+))}
                 </select>
               </div>
 

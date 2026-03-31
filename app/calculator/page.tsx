@@ -22,7 +22,7 @@ const FUNCTIONALITY_HINTS: Record<string, string> = {
   'Мониторинг по сети': 'Тип 1 — Сбор статистики печати на сетевых МФУ и принтерах по протоколу SNMP. Базовый мониторинг без идентификации пользователей.',
   'Персональная статистика': 'Тип 2 — Сбор персонализированной статистики в разрезе пользователь/объём печати. Включает весь функционал Тип 1.',
   'Аппаратный терминал «Катюша»': 'Тип 3 — Безопасная печать с авторизацией через аппаратный терминал Катюша (карта, пин-код, логин). Включает весь функционал Тип 1-2.',
-  'Программный терминал "Смарт Принт"': 'Тип 4 — Встроенный терминал на совместимых МФУ. Управление печатью, сканированием и копированием. Включает весь функционал Тип 1-3. Только для совместимых устройств.',
+  'Программный терминал "Смарт Принт"': 'Тип 4 — Встроенный терминал на совместимых МФУ. Управление печатью, сканированием и копированием. Только для совместимых устройств. Включает весь функционал Тип 1-3.',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -56,6 +56,7 @@ interface PriceRow {
   article: string
   name: string
   category: string
+  is_active: boolean
 }
 
 function formatRub(n: number) {
@@ -80,11 +81,13 @@ export default function CalculatorPage() {
   const [userRole, setUserRole] = useState('')
   const [prices, setPrices] = useState<PriceRow[]>([])
   const [registry, setRegistry] = useState<any[]>([])
+  const [expertSupport, setExpertSupport] = useState<PriceRow | null>(null)
 
   const [clientName, setClientName] = useState('')
   const [projectName, setProjectName] = useState('')
   const [saleType, setSaleType] = useState('partner')
-  const [supportYears, setSupportYears] = useState(1)
+  const [supportQty, setSupportQty] = useState(1)
+  const [includeSupport, setIncludeSupport] = useState(true)
 
   const [devices, setDevices] = useState<DeviceRow[]>([])
   const [importLoading, setImportLoading] = useState(false)
@@ -100,8 +103,20 @@ export default function CalculatorPage() {
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       if (prof) setUserRole(prof.role)
 
-      const { data: p } = await supabase.from('price_list').select('*').in('category', ['license', 'support'])
+      const { data: p } = await supabase
+        .from('price_list')
+        .select('*')
+        .eq('category', 'license')
+        .eq('is_active', true)
       if (p) setPrices(p)
+
+      // Загружаем экспертную ТП отдельно
+      const { data: etp } = await supabase
+        .from('price_list')
+        .select('*')
+        .eq('article', 'C1-ETP-20')
+        .single()
+      if (etp) setExpertSupport(etp)
 
       const { data: reg } = await supabase.from('device_registry').select('*')
       if (reg) setRegistry(reg)
@@ -227,10 +242,10 @@ export default function CalculatorPage() {
 
   const totalQty = Object.values(summary).reduce((s, v) => s + v, 0)
 
-  function getPrice(type: string, isSupport: boolean) {
+  function getPrice(type: string) {
     return prices.filter(p =>
       p.license_type === type &&
-      (isSupport ? p.article.includes('СТР') : !p.article.includes('СТР')) &&
+      !p.article.includes('СТР') &&
       p.min_quantity <= totalQty
     ).sort((a, b) => b.min_quantity - a.min_quantity)[0] || null
   }
@@ -239,12 +254,18 @@ export default function CalculatorPage() {
     const items: any[] = []
     const totals = { rrp: 0, partner: 0, distributor: 0 }
 
+    // Лицензии
     for (const [type, qty] of Object.entries(summary)) {
-      const p = getPrice(type, false)
+      const p = getPrice(type)
       if (p) {
         items.push({
-          license_type: type, article: p.article, name: p.name, quantity: qty,
-          price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
+          license_type: type,
+          article: p.article,
+          name: p.name,
+          quantity: qty,
+          price_distributor: p.price_distributor,
+          price_partner: p.price_partner,
+          price_rrp: p.price_rrp,
           sum_distributor: p.price_distributor * qty,
           sum_partner: p.price_partner * qty,
           sum_rrp: p.price_rrp * qty,
@@ -253,21 +274,28 @@ export default function CalculatorPage() {
         totals.partner += p.price_partner * qty
         totals.distributor += p.price_distributor * qty
       }
-      const sp = getPrice(type, true)
-      if (sp) {
-        const sQty = qty * supportYears
-        items.push({
-          license_type: type, article: sp.article, name: sp.name, quantity: sQty,
-          price_distributor: sp.price_distributor, price_partner: sp.price_partner, price_rrp: sp.price_rrp,
-          sum_distributor: sp.price_distributor * sQty,
-          sum_partner: sp.price_partner * sQty,
-          sum_rrp: sp.price_rrp * sQty,
-        })
-        totals.rrp += sp.price_rrp * sQty
-        totals.partner += sp.price_partner * sQty
-        totals.distributor += sp.price_distributor * sQty
-      }
     }
+
+    // Экспертная ТП
+    if (includeSupport && expertSupport && supportQty > 0) {
+      const etp = expertSupport
+      items.push({
+        license_type: '-',
+        article: etp.article,
+        name: etp.name,
+        quantity: supportQty,
+        price_distributor: etp.price_distributor,
+        price_partner: etp.price_partner,
+        price_rrp: etp.price_rrp,
+        sum_distributor: etp.price_distributor * supportQty,
+        sum_partner: etp.price_partner * supportQty,
+        sum_rrp: etp.price_rrp * supportQty,
+      })
+      totals.rrp += etp.price_rrp * supportQty
+      totals.partner += etp.price_partner * supportQty
+      totals.distributor += etp.price_distributor * supportQty
+    }
+
     return { items, totals }
   }
 
@@ -321,6 +349,21 @@ export default function CalculatorPage() {
     router.push(`/calculator/${calc.id}`)
   }
 
+  // Подсказка по ТП в зависимости от типа продажи
+const supportHint = isPartner
+  ? 'Экспертная ТП включена в КП.'
+  : saleType === 'partner'
+  ? 'Экспертная ТП включается в КП для партнёра.'
+  : saleType === 'distributor'
+  ? 'Экспертная ТП включается в КП для партнёра.'
+  : 'Экспертная ТП включается в КП для клиента.'
+
+  const supportOffHint = isPartner
+    ? 'ТП не включена. Обратитесь к вашему менеджеру для приобретения экспертной поддержки.'
+    : saleType === 'partner'
+    ? 'ТП не включена в КП. Предложите партнёру приобрести экспертную ТП отдельно.'
+    : 'ТП не включена в КП. Предложите клиенту приобрести экспертную ТП отдельно.'
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4">
@@ -348,12 +391,6 @@ export default function CalculatorPage() {
               <input value={projectName} onChange={e => setProjectName(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Название проекта" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Техподдержка, лет</label>
-              <input type="number" min={1} max={5} value={supportYears}
-                onChange={e => setSupportYears(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             {!isPartner && (
               <div>
@@ -392,29 +429,16 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          {importLoading && (
-            <div className="bg-blue-50 rounded-xl p-3 mb-4">
-              <p className="text-sm text-blue-700">Разбираем файл...</p>
-            </div>
-          )}
-          {importError && (
-            <div className="bg-red-50 rounded-xl p-3 mb-4">
-              <p className="text-sm text-red-700">{importError}</p>
-            </div>
-          )}
-          {fileName && !importLoading && (
-            <div className="bg-green-50 rounded-xl p-3 mb-4">
-              <p className="text-sm text-green-700">✓ Загружено: {fileName}</p>
-            </div>
-          )}
+          {importLoading && <div className="bg-blue-50 rounded-xl p-3 mb-4"><p className="text-sm text-blue-700">Разбираем файл...</p></div>}
+          {importError && <div className="bg-red-50 rounded-xl p-3 mb-4"><p className="text-sm text-red-700">{importError}</p></div>}
+          {fileName && !importLoading && <div className="bg-green-50 rounded-xl p-3 mb-4"><p className="text-sm text-green-700">✓ Загружено: {fileName}</p></div>}
 
           {devices.length === 0 ? (
             <div className="border-2 border-dashed border-gray-200 rounded-xl p-10 text-center">
               <p className="text-gray-500 text-sm font-medium">Нет устройств</p>
               <p className="text-gray-400 text-xs mt-1">Загрузите анкету клиента или добавьте устройства вручную</p>
               <div className="flex gap-3 justify-center mt-4">
-                <button
-                  onClick={() => { if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click() } }}
+                <button onClick={() => { if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click() } }}
                   className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
                   Загрузить анкету
                 </button>
@@ -432,9 +456,7 @@ export default function CalculatorPage() {
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-2 px-3 font-medium text-gray-600 w-36">Производитель</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600 w-40">Модель</th>
-                      <th className="text-left py-2 px-3 font-medium text-gray-600">
-                        Функционал СУП <span className="text-red-500">*</span>
-                      </th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Функционал СУП <span className="text-red-500">*</span></th>
                       <th className="text-right py-2 px-3 font-medium text-gray-600 w-24">Кол-во</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600 w-48">Статус</th>
                       <th className="w-8"></th>
@@ -447,28 +469,23 @@ export default function CalculatorPage() {
                         <tr key={device.id}
                           className={`border-b border-gray-100 ${!device.functionality ? 'bg-red-50' : device.warning ? 'bg-amber-50' : ''}`}>
                           <td className="py-2 px-3">
-                            <input
-                              value={device.manufacturer}
+                            <input value={device.manufacturer}
                               onChange={e => updateDevice(device.id, 'manufacturer', e.target.value)}
                               placeholder="Производитель"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
+                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           </td>
                           <td className="py-2 px-3">
-                            <input
-                              value={device.model}
+                            <input value={device.model}
                               onChange={e => updateDevice(device.id, 'model', e.target.value)}
                               placeholder="Модель"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
+                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           </td>
                           <td className="py-2 px-3">
                             <div className="relative group">
                               <select
                                 value={device.functionality}
                                 onChange={e => updateDevice(device.id, 'functionality', e.target.value)}
-                                className={`w-full border rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 ${!device.functionality ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
-                              >
+                                className={`w-full border rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 ${!device.functionality ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}>
                                 {!device.functionality && <option value="">— выберите функционал —</option>}
                                 {getAvailableOptions(device.maxAllowed, device.inRegistry, hasDevice).map(f => (
                                   <option key={f} value={f}>{f}</option>
@@ -482,12 +499,10 @@ export default function CalculatorPage() {
                             </div>
                           </td>
                           <td className="py-2 px-3">
-                            <input
-                              type="number" min={1}
+                            <input type="number" min={1}
                               value={device.quantity}
                               onChange={e => updateDevice(device.id, 'quantity', Number(e.target.value) || 1)}
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
+                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           </td>
                           <td className="py-2 px-3">
                             {!device.functionality ? (
@@ -504,9 +519,7 @@ export default function CalculatorPage() {
                           </td>
                           <td className="py-2 px-1 text-center">
                             <button onClick={() => removeDevice(device.id)}
-                              className="text-gray-300 hover:text-red-500 transition-colors text-xl leading-none">
-                              ×
-                            </button>
+                              className="text-gray-300 hover:text-red-500 transition-colors text-xl leading-none">×</button>
                           </td>
                         </tr>
                       )
@@ -515,7 +528,6 @@ export default function CalculatorPage() {
                 </table>
               </div>
 
-              {/* Сводка по типам */}
               {totalQty > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-4 gap-3">
                   {Object.entries(summary).map(([type, qty]) => (
@@ -529,6 +541,50 @@ export default function CalculatorPage() {
             </>
           )}
         </div>
+
+        {/* Экспертная техподдержка */}
+        {expertSupport && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">Техническая поддержка</h2>
+            <div className="flex items-start gap-4">
+              <div className="flex items-center gap-3 flex-1">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={includeSupport}
+                    onChange={e => setIncludeSupport(e.target.checked)}
+                    className="sr-only peer" />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    Экспертная техподдержка (уровень 2)
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Пакет 10 часов · {formatRub(expertSupport.price_rrp)} за пакет
+                  </p>
+                </div>
+              </div>
+
+              {includeSupport && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Пакетов:</label>
+                  <input
+                    type="number" min={1} max={99}
+                    value={supportQty}
+                    onChange={e => setSupportQty(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-20 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Подсказка */}
+            <div className={`mt-4 rounded-xl p-3 ${includeSupport ? 'bg-blue-50' : 'bg-amber-50'}`}>
+              <p className={`text-xs ${includeSupport ? 'text-blue-700' : 'text-amber-700'}`}>
+                {includeSupport ? supportHint : supportOffHint}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Предупреждения */}
         {devices.length > 0 && issues.length > 0 && (
@@ -590,9 +646,7 @@ export default function CalculatorPage() {
             className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             Отмена
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !canSave}
+          <button onClick={handleSave} disabled={saving || !canSave}
             className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
             {saving ? 'Сохраняем...' : 'Сохранить расчёт'}
           </button>
