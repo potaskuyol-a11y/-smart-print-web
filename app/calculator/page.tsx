@@ -57,6 +57,7 @@ interface PriceRow {
   name: string
   category: string
   is_active: boolean
+  license_term: string
 }
 
 function formatRub(n: number) {
@@ -86,6 +87,7 @@ export default function CalculatorPage() {
   const [clientName, setClientName] = useState('')
   const [projectName, setProjectName] = useState('')
   const [saleType, setSaleType] = useState('partner')
+  const [licenseTerm, setLicenseTerm] = useState<'annual' | 'perpetual'>('annual')
   const [supportQty, setSupportQty] = useState(1)
   const [includeSupport, setIncludeSupport] = useState(true)
 
@@ -110,7 +112,6 @@ export default function CalculatorPage() {
         .eq('is_active', true)
       if (p) setPrices(p)
 
-      // Загружаем экспертную ТП отдельно
       const { data: etp } = await supabase
         .from('price_list')
         .select('*')
@@ -245,7 +246,7 @@ export default function CalculatorPage() {
   function getPrice(type: string) {
     return prices.filter(p =>
       p.license_type === type &&
-      !p.article.includes('СТР') &&
+      p.license_term === licenseTerm &&
       p.min_quantity <= totalQty
     ).sort((a, b) => b.min_quantity - a.min_quantity)[0] || null
   }
@@ -254,7 +255,6 @@ export default function CalculatorPage() {
     const items: any[] = []
     const totals = { rrp: 0, partner: 0, distributor: 0 }
 
-    // Лицензии
     for (const [type, qty] of Object.entries(summary)) {
       const p = getPrice(type)
       if (p) {
@@ -276,7 +276,6 @@ export default function CalculatorPage() {
       }
     }
 
-    // Экспертная ТП
     if (includeSupport && expertSupport && supportQty > 0) {
       const etp = expertSupport
       items.push({
@@ -321,6 +320,9 @@ export default function CalculatorPage() {
   if (totalQty === 0) issues.push('Нет устройств для расчёта')
   const canSave = issues.length === 0
 
+  // Бессрочные требуют согласования руководителя
+  const needsApproval = licenseTerm === 'perpetual'
+
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
@@ -333,7 +335,8 @@ export default function CalculatorPage() {
       client_name: clientName,
       project_name: projectName,
       sale_type: isPartner ? 'partner' : saleType,
-      status: 'draft',
+      status: needsApproval ? 'in_review' : 'draft',
+      license_term: licenseTerm,
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
@@ -349,18 +352,15 @@ export default function CalculatorPage() {
     router.push(`/calculator/${calc.id}`)
   }
 
-  // Подсказка по ТП в зависимости от типа продажи
-const supportHint = isPartner
-  ? 'Экспертная ТП включена в КП.'
-  : saleType === 'partner'
-  ? 'Экспертная ТП включается в КП для партнёра.'
-  : saleType === 'distributor'
-  ? 'Экспертная ТП включается в КП для партнёра.'
-  : 'Экспертная ТП включается в КП для клиента.'
+  const supportHint = isPartner
+    ? 'Экспертная ТП включена в КП.'
+    : saleType === 'partner' || saleType === 'distributor'
+    ? 'Экспертная ТП включается в КП для партнёра.'
+    : 'Экспертная ТП включается в КП для клиента.'
 
   const supportOffHint = isPartner
     ? 'ТП не включена. Обратитесь к вашему менеджеру для приобретения экспертной поддержки.'
-    : saleType === 'partner'
+    : saleType === 'partner' || saleType === 'distributor'
     ? 'ТП не включена в КП. Предложите партнёру приобрести экспертную ТП отдельно.'
     : 'ТП не включена в КП. Предложите клиенту приобрести экспертную ТП отдельно.'
 
@@ -403,7 +403,33 @@ const supportHint = isPartner
                 </select>
               </div>
             )}
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Тип лицензий</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setLicenseTerm('annual')}
+                  className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${licenseTerm === 'annual' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+                  Годовые
+                </button>
+                <button
+                  onClick={() => setLicenseTerm('perpetual')}
+                  className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${licenseTerm === 'perpetual' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+                  Бессрочные
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Предупреждение о бессрочных */}
+          {needsApproval && (
+            <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2">
+              <span className="text-amber-500 text-base mt-0.5">⚠</span>
+              <div>
+                <p className="text-sm font-medium text-amber-800">Бессрочные лицензии требуют согласования</p>
+                <p className="text-xs text-amber-700 mt-0.5">После сохранения КП автоматически отправится на согласование руководителю.</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Устройства */}
@@ -555,29 +581,19 @@ const supportHint = isPartner
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Экспертная техподдержка (уровень 2)
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Пакет 10 часов · {formatRub(expertSupport.price_rrp)} за пакет
-                  </p>
+                  <p className="text-sm font-medium text-gray-900">Экспертная техподдержка (уровень 2)</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Пакет 10 часов · {formatRub(expertSupport.price_rrp)} за пакет</p>
                 </div>
               </div>
-
               {includeSupport && (
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600">Пакетов:</label>
-                  <input
-                    type="number" min={1} max={99}
-                    value={supportQty}
+                  <input type="number" min={1} max={99} value={supportQty}
                     onChange={e => setSupportQty(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-20 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                    className="w-20 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               )}
             </div>
-
-            {/* Подсказка */}
             <div className={`mt-4 rounded-xl p-3 ${includeSupport ? 'bg-blue-50' : 'bg-amber-50'}`}>
               <p className={`text-xs ${includeSupport ? 'text-blue-700' : 'text-amber-700'}`}>
                 {includeSupport ? supportHint : supportOffHint}
@@ -603,9 +619,14 @@ const supportHint = isPartner
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-gray-900">Результат расчёта</h2>
-              <span className="text-xs font-medium px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
-                {isPartner ? 'Партнёрское' : saleType === 'distributor' ? 'Дистрибьюторское' : saleType === 'direct' ? 'Прямое (РРЦ)' : 'Партнёрское'}
-              </span>
+              <div className="flex gap-2">
+                <span className="text-xs font-medium px-2 py-1 rounded-lg bg-gray-100 text-gray-700">
+                  {licenseTerm === 'perpetual' ? 'Бессрочные лицензии' : 'Годовые лицензии'}
+                </span>
+                <span className="text-xs font-medium px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
+                  {isPartner ? 'Партнёрское' : saleType === 'distributor' ? 'Дистрибьюторское' : saleType === 'direct' ? 'Прямое (РРЦ)' : 'Партнёрское'}
+                </span>
+              </div>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -648,7 +669,7 @@ const supportHint = isPartner
           </button>
           <button onClick={handleSave} disabled={saving || !canSave}
             className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
-            {saving ? 'Сохраняем...' : 'Сохранить расчёт'}
+            {saving ? 'Сохраняем...' : needsApproval ? 'Отправить на согласование' : 'Сохранить расчёт'}
           </button>
         </div>
 

@@ -36,11 +36,15 @@ interface Calculation {
   project_name: string
   sale_type: string
   status: string
+  license_term: string
   total_rrp: number
   total_partner: number
   total_distributor: number
   notes: string
   created_at: string
+  approval_comment: string | null
+  approved_by: string | null
+  approved_at: string | null
   calculation_items: CalcItem[]
 }
 
@@ -52,7 +56,7 @@ interface LicenseInput {
 
 const statusLabels: Record<string, { label: string; color: string }> = {
   draft: { label: 'Черновик', color: 'bg-gray-100 text-gray-600' },
-  in_review: { label: 'На проверке', color: 'bg-yellow-100 text-yellow-700' },
+  in_review: { label: 'На согласовании', color: 'bg-yellow-100 text-yellow-700' },
   approved: { label: 'Согласован', color: 'bg-green-100 text-green-700' },
   sent: { label: 'Отправлен', color: 'bg-blue-100 text-blue-700' },
 }
@@ -131,7 +135,7 @@ export default function CalculationViewPage() {
         setProjectName(c.project_name || '')
         setSaleType(c.sale_type || 'partner')
 
-        const licItems = c.calculation_items.filter(i => !i.article.includes('СТР'))
+        const licItems = c.calculation_items.filter(i => !i.article.includes('СТР') && i.license_type !== '-')
         const supportItem = c.calculation_items.find(i => i.article.includes('СТР'))
         const totalLic = licItems.reduce((s, i) => s + i.quantity, 0)
         if (supportItem && totalLic > 0) {
@@ -147,7 +151,7 @@ export default function CalculationViewPage() {
       const { data: priceData } = await supabase
         .from('price_list')
         .select('*')
-        .in('category', ['license', 'support'])
+        .eq('is_active', true)
       if (priceData) setPrices(priceData)
 
       setLoading(false)
@@ -214,7 +218,6 @@ export default function CalculationViewPage() {
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
-      updated_at: new Date().toISOString(),
     }).eq('id', calc.id)
 
     await supabase.from('calculation_items').delete().eq('calculation_id', calc.id)
@@ -248,6 +251,14 @@ export default function CalculationViewPage() {
     setIsEditing(false)
   }
 
+  const handleSendForApproval = async () => {
+    if (!calc) return
+    await supabase.from('calculations')
+      .update({ status: 'in_review' })
+      .eq('id', calc.id)
+    setCalc({ ...calc, status: 'in_review' })
+  }
+
   const handleCopy = async () => {
     if (!calc) return
     setCopying(true)
@@ -263,6 +274,7 @@ export default function CalculationViewPage() {
         project_name: calc.project_name,
         sale_type: calc.sale_type,
         status: 'draft',
+        license_term: calc.license_term,
         total_rrp: calc.total_rrp,
         total_partner: calc.total_partner,
         total_distributor: calc.total_distributor,
@@ -321,8 +333,8 @@ export default function CalculationViewPage() {
     )
   }
 
-  const licenseItems = calc.calculation_items.filter(i => !i.article.includes('СТР'))
-  const supportItems = calc.calculation_items.filter(i => i.article.includes('СТР'))
+  const licenseItems = calc.calculation_items.filter(i => !i.article.includes('СТР') && i.license_type !== '-')
+  const supportItems = calc.calculation_items.filter(i => i.article.includes('СТР') || i.license_type === '-')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -340,7 +352,12 @@ export default function CalculationViewPage() {
           </div>
         </div>
         {!isEditing && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {calc.license_term === 'perpetual' && (
+              <span className="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-700">
+                Бессрочные
+              </span>
+            )}
             <span className={`text-xs font-medium px-2 py-1 rounded-lg ${statusLabels[calc.status]?.color}`}>
               {statusLabels[calc.status]?.label}
             </span>
@@ -360,13 +377,13 @@ export default function CalculationViewPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-800 mb-1">Клиент</label>
                   <input value={clientName} onChange={e => setClientName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Название компании" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-800 mb-1">Проект</label>
                   <input value={projectName} onChange={e => setProjectName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Название проекта" />
                 </div>
                 <div>
@@ -428,6 +445,19 @@ export default function CalculationViewPage() {
           </>
         ) : (
           <>
+            {/* Статус согласования */}
+            {(calc.status === 'in_review' || calc.status === 'approved') && (
+              <div className={`rounded-2xl border p-4 ${calc.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-yellow-50 border-yellow-100'}`}>
+                <p className={`text-sm font-medium ${calc.status === 'approved' ? 'text-green-800' : 'text-yellow-800'}`}>
+                  {calc.status === 'approved' ? '✓ КП согласован' : '⏳ КП на согласовании у руководителя'}
+                </p>
+                {calc.approval_comment && (
+                  <p className="text-sm text-gray-600 mt-1">{calc.approval_comment}</p>
+                )}
+              </div>
+            )}
+
+            {/* Детали проекта */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">Детали проекта</h2>
               <div className="grid grid-cols-3 gap-6">
@@ -446,9 +476,12 @@ export default function CalculationViewPage() {
               </div>
             </div>
 
+            {/* Лицензии */}
             {licenseItems.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <h2 className="text-base font-semibold text-gray-900 mb-4">Лицензии</h2>
+                <h2 className="text-base font-semibold text-gray-900 mb-4">
+                  Лицензии {calc.license_term === 'perpetual' && <span className="text-xs font-normal text-purple-600 ml-1">бессрочные</span>}
+                </h2>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
@@ -477,6 +510,7 @@ export default function CalculationViewPage() {
               </div>
             )}
 
+            {/* Техподдержка */}
             {supportItems.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-200 p-6">
                 <h2 className="text-base font-semibold text-gray-900 mb-4">Техническая поддержка</h2>
@@ -508,6 +542,7 @@ export default function CalculationViewPage() {
               </div>
             )}
 
+            {/* Итого */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">Итого по расчёту</h2>
               <div className="grid grid-cols-3 gap-4">
@@ -528,11 +563,18 @@ export default function CalculationViewPage() {
               </div>
             </div>
 
+            {/* Кнопки */}
             <div className="flex gap-3 justify-end pb-8">
               <button onClick={() => router.push('/dashboard')}
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
                 К списку
               </button>
+              {calc.status === 'draft' && userRole === 'manager_sales' && (
+                <button onClick={handleSendForApproval}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                  На согласование
+                </button>
+              )}
               <button onClick={handleCopy} disabled={copying}
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 {copying ? 'Копируем...' : 'Копировать'}
