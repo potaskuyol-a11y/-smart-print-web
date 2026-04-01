@@ -229,6 +229,12 @@ export default function DashboardPage() {
           </div>
           <div className="flex gap-3">
             {isAdmin && (
+              <button onClick={() => router.push('/admin/price')}
+                className="border border-gray-300 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+                Управление прайсом
+              </button>
+            )}
+            {isAdmin && (
               <button onClick={() => router.push('/admin/devices')}
                 className="border border-gray-300 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
                 Реестр устройств

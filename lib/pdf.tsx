@@ -14,18 +14,17 @@ const styles = StyleSheet.create({
   page: { fontFamily: 'Roboto', fontSize: 9, padding: 30, color: '#1a1a1a' },
   header: { marginBottom: 20 },
   title: { fontSize: 18, fontWeight: 700, color: '#1e40af', marginBottom: 4 },
-  subtitle: { fontSize: 10, fontWeight: 400, color: '#6b7280', marginBottom: 2 },
   metaRow: { flexDirection: 'row', gap: 20, marginTop: 8 },
   metaItem: { flexDirection: 'column' },
   metaLabel: { fontSize: 8, color: '#9ca3af', marginBottom: 2 },
   metaValue: { fontSize: 9, fontWeight: 500, color: '#111827' },
   sectionTitle: { fontSize: 11, fontWeight: 700, color: '#111827', marginBottom: 6, marginTop: 14 },
+  sectionNote: { fontSize: 8, color: '#6b7280', marginBottom: 4 },
   table: { width: '100%' },
   tableHead: { flexDirection: 'row', backgroundColor: '#1e40af', borderRadius: 4, paddingVertical: 5, paddingHorizontal: 6, marginBottom: 2 },
   tableHeadCell: { color: '#ffffff', fontWeight: 700, fontSize: 8 },
   tableRow: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6, borderBottomWidth: 0.5, borderBottomColor: '#f3f4f6' },
   tableRowAlt: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6, backgroundColor: '#f9fafb', borderBottomWidth: 0.5, borderBottomColor: '#f3f4f6' },
-  tableFooter: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 6, backgroundColor: '#eff6ff', borderRadius: 4, marginTop: 4 },
   colArticle: { width: '14%' },
   colName: { width: '38%' },
   colQty: { width: '8%', textAlign: 'right' },
@@ -48,6 +47,9 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 8, fontWeight: 500, color: '#1e40af' },
   footer: { position: 'absolute', bottom: 20, left: 30, right: 30, flexDirection: 'row', justifyContent: 'space-between' },
   footerText: { fontSize: 7, color: '#9ca3af' },
+  vatNote: { fontSize: 7, color: '#9ca3af', marginTop: 2 },
+  ccBlock: { backgroundColor: '#fffbeb', borderRadius: 6, padding: 10, marginTop: 14 },
+  ccText: { fontSize: 9, color: '#92400e' },
 })
 
 function formatRub(n: number) {
@@ -76,62 +78,99 @@ interface CalcItem {
   sum_rrp: number
 }
 
+interface HardwareItem {
+  id: number
+  article: string
+  name: string
+  quantity: number
+  sum_distributor: number
+  sum_partner: number
+  sum_rrp: number
+  includes_vat: boolean
+}
+
 interface Calculation {
   id: string
   client_name: string
   project_name: string
   sale_type: string
+  license_term: string
   total_rrp: number
   total_partner: number
   total_distributor: number
   created_at: string
+  needs_cc: boolean
   calculation_items: CalcItem[]
+  calculation_hardware?: HardwareItem[]
 }
 
 interface Props {
   calc: Calculation
   isPartner: boolean
+  saleType?: string
 }
 
-function TableSection({ title, items, isPartner }: { title: string; items: CalcItem[]; isPartner: boolean }) {
-  if (items.length === 0) return null
+function TableRows({ items, priceCol }: { items: any[]; priceCol: 'distributor' | 'partner' | 'rrp' }) {
+  const getSum = (item: any) => {
+    if (priceCol === 'distributor') return item.sum_distributor
+    if (priceCol === 'partner') return item.sum_partner
+    return item.sum_rrp
+  }
+  const getPrice = (item: any) => {
+    const sum = getSum(item)
+    return sum > 0 && item.quantity > 0 ? sum / item.quantity : 0
+  }
 
-  const colArticle = isPartner ? styles.colArticleNoDistrib : styles.colArticle
-  const colName = isPartner ? styles.colNameNoDistrib : styles.colName
-  const colQty = isPartner ? styles.colQtyNoDistrib : styles.colQty
-  const colPartner = isPartner ? styles.colPartnerNoDistrib : styles.colPartner
-  const colRrp = isPartner ? styles.colRrpNoDistrib : styles.colRrp
+  const colLabel = priceCol === 'distributor' ? 'Дистрибьютор' : priceCol === 'partner' ? 'Партнёр' : 'РРЦ'
 
   return (
-    <View>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.table}>
-        <View style={styles.tableHead}>
-          <Text style={[styles.tableHeadCell, colArticle]}>Артикул</Text>
-          <Text style={[styles.tableHeadCell, colName]}>Наименование</Text>
-          <Text style={[styles.tableHeadCell, colQty]}>Кол-во</Text>
-          {!isPartner && <Text style={[styles.tableHeadCell, styles.colDistrib]}>Дистриб.</Text>}
-          <Text style={[styles.tableHeadCell, colPartner]}>Партнёр</Text>
-          <Text style={[styles.tableHeadCell, colRrp]}>РРЦ</Text>
-        </View>
-        {items.map((item, i) => (
-          <View key={item.id} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-            <Text style={colArticle}>{item.article}</Text>
-            <Text style={colName}>{item.name}</Text>
-            <Text style={colQty}>{item.quantity}</Text>
-            {!isPartner && <Text style={[styles.colDistrib, { textAlign: 'right' }]}>{formatRub(item.sum_distributor)}</Text>}
-            <Text style={colPartner}>{formatRub(item.sum_partner)}</Text>
-            <Text style={colRrp}>{formatRub(item.sum_rrp)}</Text>
-          </View>
-        ))}
+    <>
+      <View style={styles.tableHead}>
+        <Text style={[styles.tableHeadCell, styles.colArticleNoDistrib]}>Артикул</Text>
+        <Text style={[styles.tableHeadCell, styles.colNameNoDistrib]}>Наименование</Text>
+        <Text style={[styles.tableHeadCell, styles.colQtyNoDistrib]}>Кол-во</Text>
+        <Text style={[styles.tableHeadCell, styles.colPartnerNoDistrib]}>Цена за ед.</Text>
+        <Text style={[styles.tableHeadCell, styles.colRrpNoDistrib]}>{colLabel}</Text>
       </View>
-    </View>
+      {items.map((item, i) => (
+        <View key={item.id ?? i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+          <Text style={styles.colArticleNoDistrib}>{item.article}</Text>
+          <Text style={styles.colNameNoDistrib}>{item.name}</Text>
+          <Text style={styles.colQtyNoDistrib}>{item.quantity}</Text>
+          <Text style={styles.colPartnerNoDistrib}>
+            {getPrice(item) > 0 ? formatRub(getPrice(item)) : 'по запросу'}
+          </Text>
+          <Text style={styles.colRrpNoDistrib}>
+            {getSum(item) > 0 ? formatRub(getSum(item)) : 'по запросу'}
+          </Text>
+        </View>
+      ))}
+    </>
   )
 }
 
-export function KpDocument({ calc, isPartner }: Props) {
-  const licenseItems = calc.calculation_items.filter(i => !i.article.includes('СТР'))
-  const supportItems = calc.calculation_items.filter(i => i.article.includes('СТР'))
+export function KpDocument({ calc, isPartner, saleType }: Props) {
+  const effectiveSaleType = saleType || calc.sale_type
+  const priceCol: 'distributor' | 'partner' | 'rrp' =
+    effectiveSaleType === 'distributor' ? 'distributor' :
+    effectiveSaleType === 'direct' ? 'rrp' : 'partner'
+  // Лицензии — только позиции с license_type не hardware и не '-', без СТР
+  const licenseItems = calc.calculation_items.filter(i =>
+    i.license_type !== 'hardware' &&
+    i.license_type !== '-' &&
+    !i.article.includes('СТР') &&
+    !i.article.includes('ETP')
+  )
+
+  // Оборудование из calculation_hardware
+  const hardwareItems = calc.calculation_hardware || []
+
+  // Техподдержка — ETP и СТР из items
+  const supportItems = calc.calculation_items.filter(i =>
+    i.article.includes('ETP') || i.article.includes('СТР')
+  )
+
+  const isPerpetual = calc.license_term === 'perpetual'
 
   return (
     <Document>
@@ -141,7 +180,10 @@ export function KpDocument({ calc, isPartner }: Props) {
         <View style={styles.header}>
           <Text style={styles.title}>Смарт Принт</Text>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{saleTypeLabels[calc.sale_type] || calc.sale_type}</Text>
+            <Text style={styles.badgeText}>
+              {saleTypeLabels[calc.sale_type] || calc.sale_type}
+              {isPerpetual ? ' · Бессрочные лицензии' : ' · Годовые лицензии'}
+            </Text>
           </View>
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
@@ -164,28 +206,60 @@ export function KpDocument({ calc, isPartner }: Props) {
         <View style={styles.divider} />
 
         {/* Лицензии */}
-        <TableSection title="Лицензии" items={licenseItems} isPartner={isPartner} />
+        {licenseItems.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Лицензии</Text>
+            <Text style={styles.sectionNote}>Цены без НДС</Text>
+            <View style={styles.table}>
+              <TableRows items={licenseItems} priceCol={priceCol} />
+            </View>
+          </View>
+        )}
+
+        {/* Оборудование */}
+        {hardwareItems.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Оборудование</Text>
+            <Text style={styles.sectionNote}>Цены с НДС</Text>
+            <View style={styles.table}>
+              <TableRows items={hardwareItems} priceCol={priceCol} />
+            </View>
+          </View>
+        )}
+
+        {/* Подбор ЦК */}
+        {calc.needs_cc && (
+          <View style={styles.ccBlock}>
+            <Text style={styles.ccText}>* Оборудование передано на подбор в Центр компетенций и будет добавлено в КП отдельно</Text>
+          </View>
+        )}
 
         {/* Техподдержка */}
-        <TableSection title="Техническая поддержка" items={supportItems} isPartner={isPartner} />
+        {supportItems.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Техническая поддержка</Text>
+            <Text style={styles.sectionNote}>Цены с НДС</Text>
+            <View style={styles.table}>
+              <TableRows items={supportItems} priceCol={priceCol} />
+            </View>
+          </View>
+        )}
 
         {/* Итого */}
         <View style={styles.totalsBlock}>
-          {!isPartner && (
-            <View style={styles.totalCard}>
-              <Text style={styles.totalLabel}>Дистрибьютор</Text>
-              <Text style={styles.totalValue}>{formatRub(calc.total_distributor)}</Text>
-            </View>
-          )}
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>Партнёр</Text>
-            <Text style={styles.totalValue}>{formatRub(calc.total_partner)}</Text>
-          </View>
           <View style={styles.totalCardHighlight}>
-            <Text style={styles.totalLabel}>РРЦ (клиент)</Text>
-            <Text style={styles.totalValueHighlight}>{formatRub(calc.total_rrp)}</Text>
+            <Text style={styles.totalLabel}>
+              {priceCol === 'distributor' ? 'Итого (Дистрибьютор)' :
+               priceCol === 'rrp' ? 'Итого (РРЦ)' : 'Итого (Партнёр)'}
+            </Text>
+            <Text style={styles.totalValueHighlight}>
+              {priceCol === 'distributor' ? formatRub(calc.total_distributor) :
+               priceCol === 'rrp' ? formatRub(calc.total_rrp) : formatRub(calc.total_partner)}
+            </Text>
           </View>
         </View>
+
+        <Text style={styles.vatNote}>* Итоговая сумма включает лицензии (без НДС), оборудование и техподдержку (с НДС)</Text>
 
         {/* Футер */}
         <View style={styles.footer} fixed>

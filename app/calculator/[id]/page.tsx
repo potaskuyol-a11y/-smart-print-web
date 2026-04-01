@@ -19,7 +19,19 @@ interface CalcItem {
   sum_partner: number
   sum_rrp: number
 }
-
+interface HardwareItem {
+  id: number
+  article: string
+  name: string
+  quantity: number
+  price_distributor: number
+  price_partner: number
+  price_rrp: number
+  sum_distributor: number
+  sum_partner: number
+  sum_rrp: number
+  includes_vat: boolean
+}
 interface Calculation {
   id: string
   client_name: string
@@ -37,6 +49,8 @@ interface Calculation {
   approved_by: string | null
   approved_at: string | null
   calculation_items: CalcItem[]
+  calculation_hardware: HardwareItem[]
+  needs_cc: boolean
 }
 
 interface PriceRow {
@@ -102,6 +116,7 @@ export default function CalculationViewPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copying, setCopying] = useState(false)
+  const [hardwareItems, setHardwareItems] = useState<HardwareItem[]>([])
   const [prices, setPrices] = useState<PriceRow[]>([])
 
   const [editComment, setEditComment] = useState('')
@@ -134,13 +149,16 @@ export default function CalculationViewPage() {
 
       const { data } = await supabase
         .from('calculations')
-        .select('*, calculation_items(*)')
+        .select('*, calculation_items(*), calculation_hardware(*)')
         .eq('id', id)
         .single()
 
       if (data) {
         const c = data as Calculation
         setCalc(c)
+        if (c.calculation_hardware?.length > 0) {
+          setHardwareItems(c.calculation_hardware)
+        }
         setClientName(c.client_name || '')
         setProjectName(c.project_name || '')
         setSaleType(c.sale_type || 'partner')
@@ -321,7 +339,8 @@ const handleSendForApproval = async () => {
   const handleDownloadPdf = async () => {
     if (!calc) return
     setGeneratingPdf(true)
-    const blob = await pdf(<KpDocument calc={calc} isPartner={isPartner} />).toBlob()
+    const calcWithHardware = { ...calc, calculation_hardware: hardwareItems, needs_cc: calc.needs_cc || false }
+    const blob = await pdf(<KpDocument calc={calcWithHardware} isPartner={isPartner} />).toBlob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -556,7 +575,49 @@ const handleSendForApproval = async () => {
                 </table>
               </div>
             )}
+{/* Оборудование */}
+            {hardwareItems.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-900">Оборудование</h2>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">с НДС</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 pr-4 font-medium text-gray-600 w-1/2">Наименование</th>
+                      <th className="text-right py-2 px-3 font-medium text-gray-600">Кол-во</th>
+                      {!isPartner && <th className="text-right py-2 px-3 font-medium text-gray-600">Дистриб.</th>}
+                      <th className="text-right py-2 px-3 font-medium text-gray-600">Партнёр</th>
+                      <th className="text-right py-2 pl-3 font-medium text-gray-600">РРЦ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hardwareItems.map(item => (
+                      <tr key={item.id} className="border-b border-gray-100">
+                        <td className="py-2 pr-4 text-gray-900">
+                          <div>{item.name}</div>
+                          <div className="text-xs text-gray-500">{item.article}</div>
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-900">{item.quantity}</td>
+                        {!isPartner && <td className="py-2 px-3 text-right text-gray-500">{formatRub(item.sum_distributor)}</td>}
+                        <td className="py-2 px-3 text-right text-gray-700">{formatRub(item.sum_partner)}</td>
+                        <td className="py-2 pl-3 text-right font-medium text-gray-900">
+                          {item.sum_rrp > 0 ? formatRub(item.sum_rrp) : 'по запросу'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
+            {/* Подбор ЦК */}
+            {calc.needs_cc && (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                <p className="text-sm font-medium text-amber-800">⏳ Оборудование передано на подбор в Центр компетенций</p>
+              </div>
+            )}
             {/* Техподдержка */}
             {supportItems.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-200 p-6">
@@ -608,6 +669,9 @@ const handleSendForApproval = async () => {
                   <p className="text-lg font-semibold text-blue-700">{formatRub(calc.total_rrp)}</p>
                 </div>
               </div>
+              {hardwareItems.length > 0 && (
+                <p className="text-xs text-gray-400 mt-3">* Итого включает оборудование и ТП с НДС</p>
+              )}
             </div>
 
             {/* Кнопки */}

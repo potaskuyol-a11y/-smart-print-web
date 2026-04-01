@@ -1,0 +1,110 @@
+import { NextResponse } from 'next/server'
+import * as XLSX from 'xlsx'
+import { createClient } from '@supabase/supabase-js'
+
+export async function POST(request: Request) {
+  try {
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+
+    const buffer = await file.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: 'array' })
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json<any>(sheet, { header: 1, defval: null })
+
+    // Находим заголовочную строку
+    let headerRow = -1
+    let colArticle = -1
+    let colName = -1
+    let colDistrib = -1
+    let colPartner = -1
+    let colRrp = -1
+
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const row = rows[i] as any[]
+      for (let j = 0; j < row.length; j++) {
+        const cell = String(row[j] || '').toLowerCase()
+        if (cell.includes('артикул')) colArticle = j
+        if (cell.includes('наименование')) colName = j
+        if (cell.includes('дистриб')) colDistrib = j
+        if (cell.includes('партнер') || cell.includes('партнёр')) colPartner = j
+        if (cell.includes('ррц') || cell.includes('розничн')) colRrp = j
+      }
+      if (colArticle >= 0 && colName >= 0) {
+        headerRow = i
+        break
+      }
+    }
+
+    if (headerRow < 0) {
+      return NextResponse.json({ error: 'Не найдены колонки Артикул и Наименование' }, { status: 400 })
+    }
+
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    let updated = 0
+    let added = 0
+    let skipped = 0
+
+    function parsePrice(val: any): number | null {
+      if (!val) return null
+      const str = String(val).replace(/[^\d.,]/g, '').replace(',', '.')
+      const num = parseFloat(str)
+      return isNaN(num) ? null : num
+    }
+
+    for (let i = headerRow + 1; i < rows.length; i++) {
+      const row = rows[i] as any[]
+      const article = String(row[colArticle] || '').trim()
+      const name = String(row[colName] || '').trim()
+
+      if (!article || !name) continue
+      if (article.toLowerCase() === 'артикул') continue
+
+      const priceRrp = colRrp >= 0 ? parsePrice(row[colRrp]) : null
+      const pricePartner = colPartner >= 0 ? parsePrice(row[colPartner]) : null
+      const priceDistrib = colDistrib >= 0 ? parsePrice(row[colDistrib]) : null
+
+      // Проверяем существует ли позиция
+      const { data: existing } = await supabaseAdmin
+        .from('price_list')
+        .select('id, price_rrp, price_partner, price_distributor')
+        .eq('article', article)
+        .single()
+
+      if (existing) {
+        // Обновляем цены
+        const updates: any = { name }
+        if (priceRrp !== null) updates.price_rrp = priceRrp
+        if (pricePartner !== null) updates.price_partner = pricePartner
+        if (priceDistrib !== null) updates.price_distributor = priceDistrib
+
+        await supabaseAdmin.from('price_list').update(updates).eq('id', existing.id)
+        updated++
+      } else {
+        // Новая позиция — добавляем со статусом неактивна, чтобы админ проверил
+        const { error } = await supabaseAdmin.from('price_list').insert({
+          article,
+          name,
+          price_rrp: priceRrp || 0,
+          price_partner: pricePartner || 0,
+          price_distributor: priceDistrib || 0,
+          category: 'license',
+          license_type: '-',
+          min_quantity: 1,
+          is_active: false,
+          includes_vat: false,
+        })
+        if (!error) added++
+        else skipped++
+      }
+    }
+
+    return NextResponse.json({ updated, added, skipped })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}

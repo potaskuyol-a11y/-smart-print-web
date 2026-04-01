@@ -78,6 +78,7 @@ interface PriceRow {
   is_active: boolean
   license_term: string
   includes_vat: boolean
+  description: string | null
 }
 
 function formatRub(n: number) {
@@ -94,7 +95,17 @@ function getAvailableOptions(maxAllowed: string, inRegistry: boolean, hasDevice:
 function uid() {
   return Math.random().toString(36).slice(2)
 }
-
+function Tooltip({ text, children }: { text: string | null; children: React.ReactNode }) {
+  if (!text) return <>{children}</>
+  return (
+    <div className="relative group inline-block w-full">
+      {children}
+      <div className="absolute left-0 top-full mt-1 z-30 hidden group-hover:block bg-gray-900 text-white text-xs rounded-lg px-3 py-2 w-72 shadow-lg pointer-events-none">
+        {text}
+      </div>
+    </div>
+  )
+}
 export default function CalculatorPage() {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -404,12 +415,13 @@ export default function CalculatorPage() {
     for (const [type, qty] of Object.entries(summary)) {
       const p = getPrice(type)
       if (p) {
-        items.push({
+       items.push({
           license_type: type, article: p.article, name: p.name, quantity: qty,
           price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
           sum_distributor: p.price_distributor * qty,
           sum_partner: p.price_partner * qty,
           sum_rrp: p.price_rrp * qty,
+          description: p.description || null,
         })
         totals.rrp += p.price_rrp * qty
         totals.partner += p.price_partner * qty
@@ -419,7 +431,7 @@ export default function CalculatorPage() {
 
     if (!needsCC) {
       hardware.filter(h => h.quantity > 0).forEach(h => {
-        items.push({
+       items.push({
           license_type: 'hardware',
           article: h.article,
           name: h.name + ' (с НДС)',
@@ -430,6 +442,7 @@ export default function CalculatorPage() {
           sum_distributor: h.sum_distributor,
           sum_partner: h.sum_partner,
           sum_rrp: h.sum_rrp,
+          description: hardwarePrices.find(p => p.article === h.article)?.description || null,
         })
         totals.rrp += h.sum_rrp
         totals.partner += h.sum_partner
@@ -440,17 +453,18 @@ export default function CalculatorPage() {
     if (includeSupport && expertSupport && supportQty > 0) {
       const etp = expertSupport
       items.push({
-        license_type: '-',
-        article: etp.article,
-        name: etp.name + ' (с НДС)',
-        quantity: supportQty,
-        price_distributor: etp.price_distributor,
-        price_partner: etp.price_partner,
-        price_rrp: etp.price_rrp,
-        sum_distributor: etp.price_distributor * supportQty,
-        sum_partner: etp.price_partner * supportQty,
-        sum_rrp: etp.price_rrp * supportQty,
-      })
+          license_type: '-',
+          article: etp.article,
+          name: etp.name + ' (с НДС)',
+          quantity: supportQty,
+          price_distributor: etp.price_distributor,
+          price_partner: etp.price_partner,
+          price_rrp: etp.price_rrp,
+          sum_distributor: etp.price_distributor * supportQty,
+          sum_partner: etp.price_partner * supportQty,
+          sum_rrp: etp.price_rrp * supportQty,
+          description: etp.description || null,
+        })
       totals.rrp += etp.price_rrp * supportQty
       totals.partner += etp.price_partner * supportQty
       totals.distributor += etp.price_distributor * supportQty
@@ -808,8 +822,12 @@ export default function CalculatorPage() {
                   {hardware.map((h, i) => (
                     <div key={h.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{h.name}</p>
-                        <p className="text-xs text-gray-500">{h.article}</p>
+                        <Tooltip text={hardwarePrices.find(p => p.article === h.article)?.description || null}>
+                          <div className="cursor-help">
+                            <p className="text-sm font-medium text-gray-900 truncate">{h.name}</p>
+                            <p className="text-xs text-gray-500">{h.article}</p>
+                          </div>
+                        </Tooltip>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <input type="number" min={0} value={h.quantity}
@@ -948,8 +966,12 @@ export default function CalculatorPage() {
                 {calcResult.map((r, i) => (
                   <tr key={i} className={`border-b border-gray-100 ${r.license_type === 'hardware' || r.license_type === '-' ? 'bg-gray-50' : ''}`}>
                     <td className="py-2 pr-4 text-gray-900">
-                      <div>{r.name}</div>
-                      <div className="text-xs text-gray-500">{r.article}</div>
+                      <Tooltip text={r.description || null}>
+                        <div className="cursor-help">
+                          <div>{r.name}</div>
+                          <div className="text-xs text-gray-500">{r.article}</div>
+                        </div>
+                      </Tooltip>
                     </td>
                     <td className="py-2 px-3 text-right text-gray-900">{r.quantity}</td>
                     <td className="py-2 px-3 text-right text-gray-500">
