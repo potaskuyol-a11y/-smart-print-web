@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -21,8 +21,8 @@ const FUNCTIONALITY_TO_TYPE: Record<string, string> = {
 const FUNCTIONALITY_HINTS: Record<string, string> = {
   'Мониторинг по сети': 'Тип 1 — Сбор статистики печати на сетевых МФУ и принтерах по протоколу SNMP. Базовый мониторинг без идентификации пользователей.',
   'Персональная статистика': 'Тип 2 — Сбор персонализированной статистики в разрезе пользователь/объём печати. Включает весь функционал Тип 1.',
-  'Аппаратный терминал «Катюша»': 'Тип 3 — Безопасная печать с авторизацией через аппаратный терминал Катюша (карта, пин-код, логин). Включает весь функционал Тип 1-2.',
-  'Программный терминал "Смарт Принт"': 'Тип 4 — Встроенный терминал на совместимых МФУ. Управление печатью, сканированием и копированием. Только для совместимых устройств. Включает весь функционал Тип 1-3.',
+  'Аппаратный терминал «Катюша»': 'Тип 3 — Безопасная печать с авторизацией через аппаратный терминал Катюша. Включает весь функционал Тип 1-2.',
+  'Программный терминал "Смарт Принт"': 'Тип 4 — Встроенный терминал на совместимых МФУ. Управление печатью, сканированием и копированием. Только для совместимых устройств.',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -33,6 +33,11 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 const TYPE_ORDER = ['Тип 1', 'Тип 2', 'Тип 3', 'Тип 4']
+
+const HARDWARE_TYPE3 = ['СР-ТВТ-01', 'М3-КРН-01']
+const HARDWARE_TYPE4_KATUSHA = ['CK223', '685621.013', '685621.015', 'CK121', '685621.011', 'СК3111', 'М3-КРН-02']
+const HARDWARE_TYPE4_DEFAULT = ['TWN4']
+const KATUSHA_KEYWORDS = ['katusha', 'катюша']
 
 interface DeviceRow {
   id: string
@@ -47,6 +52,20 @@ interface DeviceRow {
   fromImport: boolean
 }
 
+interface HardwareRow {
+  id: string
+  article: string
+  name: string
+  quantity: number
+  price_distributor: number
+  price_partner: number
+  price_rrp: number
+  sum_distributor: number
+  sum_partner: number
+  sum_rrp: number
+  includes_vat: boolean
+}
+
 interface PriceRow {
   license_type: string
   min_quantity: number
@@ -58,6 +77,7 @@ interface PriceRow {
   category: string
   is_active: boolean
   license_term: string
+  includes_vat: boolean
 }
 
 function formatRub(n: number) {
@@ -81,8 +101,12 @@ export default function CalculatorPage() {
 
   const [userRole, setUserRole] = useState('')
   const [prices, setPrices] = useState<PriceRow[]>([])
+  const [hardwarePrices, setHardwarePrices] = useState<PriceRow[]>([])
   const [registry, setRegistry] = useState<any[]>([])
   const [expertSupport, setExpertSupport] = useState<PriceRow | null>(null)
+
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
 
   const [clientName, setClientName] = useState('')
   const [projectName, setProjectName] = useState('')
@@ -92,12 +116,60 @@ export default function CalculatorPage() {
   const [includeSupport, setIncludeSupport] = useState(true)
 
   const [devices, setDevices] = useState<DeviceRow[]>([])
+  const [hardware, setHardware] = useState<HardwareRow[]>([])
+  const [needsCC, setNeedsCC] = useState(false)
+
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState('')
   const [fileName, setFileName] = useState('')
-const [saving, setSaving] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [showApprovalModal, setShowApprovalModal] = useState(false)
   const [approvalComment, setApprovalComment] = useState('')
+
+  const buildHardwareRow = useCallback((article: string, qty: number, hwPrices: PriceRow[]): HardwareRow | null => {
+    const p = hwPrices.find(h => h.article === article)
+    if (!p) return null
+    return {
+      id: uid(),
+      article: p.article,
+      name: p.name,
+      quantity: qty,
+      price_distributor: p.price_distributor,
+      price_partner: p.price_partner,
+      price_rrp: p.price_rrp,
+      sum_distributor: p.price_distributor * qty,
+      sum_partner: p.price_partner * qty,
+      sum_rrp: p.price_rrp * qty,
+      includes_vat: true,
+    }
+  }, [])
+
+  const autoSelectHardware = useCallback((devs: DeviceRow[], hwPrices: PriceRow[]) => {
+    if (hwPrices.length === 0) return
+    const articleQty: Record<string, number> = {}
+
+    const type3Qty = devs
+      .filter(d => FUNCTIONALITY_TO_TYPE[d.functionality] === 'Тип 3')
+      .reduce((s, d) => s + d.quantity, 0)
+
+    if (type3Qty > 0) {
+      HARDWARE_TYPE3.forEach(a => { articleQty[a] = (articleQty[a] || 0) + type3Qty })
+    }
+
+    devs.filter(d => FUNCTIONALITY_TO_TYPE[d.functionality] === 'Тип 4').forEach(dev => {
+      const isKatusha = KATUSHA_KEYWORDS.some(k => dev.manufacturer.toLowerCase().includes(k))
+      const articles = isKatusha ? HARDWARE_TYPE4_KATUSHA : HARDWARE_TYPE4_DEFAULT
+      articles.forEach(a => { articleQty[a] = (articleQty[a] || 0) + dev.quantity })
+    })
+
+    const newHardware: HardwareRow[] = []
+    Object.entries(articleQty).forEach(([article, qty]) => {
+      const row = buildHardwareRow(article, qty, hwPrices)
+      if (row) newHardware.push(row)
+    })
+
+    setHardware(newHardware)
+  }, [buildHardwareRow])
 
   useEffect(() => {
     const load = async () => {
@@ -107,22 +179,85 @@ const [saving, setSaving] = useState(false)
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       if (prof) setUserRole(prof.role)
 
-      const { data: p } = await supabase
-        .from('price_list')
-        .select('*')
-        .eq('category', 'license')
-        .eq('is_active', true)
+      const { data: p } = await supabase.from('price_list').select('*')
+        .eq('category', 'license').eq('is_active', true)
       if (p) setPrices(p)
 
-      const { data: etp } = await supabase
-        .from('price_list')
-        .select('*')
-        .eq('article', 'C1-ETP-20')
-        .single()
+      const { data: hw } = await supabase.from('price_list').select('*')
+        .eq('category', 'hardware').eq('is_active', true)
+      if (hw) setHardwarePrices(hw)
+
+      const { data: etp } = await supabase.from('price_list').select('*')
+        .eq('article', 'C1-ETP-20').single()
       if (etp) setExpertSupport(etp)
 
       const { data: reg } = await supabase.from('device_registry').select('*')
       if (reg) setRegistry(reg)
+
+      // Режим редактирования
+      const params = new URLSearchParams(window.location.search)
+      const editParam = params.get('edit')
+      if (editParam) {
+        setEditId(editParam)
+        setEditLoading(true)
+
+        const { data: calcData } = await supabase
+          .from('calculations')
+          .select('*, calculation_items(*), calculation_hardware(*)')
+          .eq('id', editParam)
+          .single()
+
+        if (calcData) {
+          setClientName(calcData.client_name || '')
+          setProjectName(calcData.project_name || '')
+          setSaleType(calcData.sale_type || 'partner')
+          setLicenseTerm(calcData.license_term || 'annual')
+          setNeedsCC(calcData.needs_cc || false)
+
+          const etpItem = calcData.calculation_items?.find((i: any) => i.article === 'C1-ETP-20')
+          if (etpItem) {
+            setIncludeSupport(true)
+            setSupportQty(etpItem.quantity)
+          } else {
+            setIncludeSupport(false)
+          }
+
+          if (calcData.calculation_hardware?.length > 0) {
+            setHardware(calcData.calculation_hardware.map((h: any) => ({
+              id: uid(),
+              article: h.article,
+              name: h.name,
+              quantity: h.quantity,
+              price_distributor: h.price_distributor,
+              price_partner: h.price_partner,
+              price_rrp: h.price_rrp,
+              sum_distributor: h.sum_distributor,
+              sum_partner: h.sum_partner,
+              sum_rrp: h.sum_rrp,
+              includes_vat: true,
+            })))
+          }
+
+          const licItems = calcData.calculation_items?.filter((i: any) =>
+            i.license_type !== '-' && i.license_type !== 'hardware' && !i.article.includes('СТР')
+          ) || []
+
+          const restoredDevices: DeviceRow[] = licItems.map((item: any) => ({
+            id: uid(),
+            manufacturer: '',
+            model: '',
+            functionality: Object.entries(FUNCTIONALITY_TO_TYPE).find(([, t]) => t === item.license_type)?.[0] || '',
+            quantity: item.quantity,
+            warning: '',
+            inRegistry: false,
+            needsInspection: false,
+            maxAllowed: 'Тип 4',
+            fromImport: false,
+          }))
+          setDevices(restoredDevices)
+        }
+        setEditLoading(false)
+      }
     }
     load()
   }, [])
@@ -130,7 +265,7 @@ const [saving, setSaving] = useState(false)
   const isPartner = userRole === 'partner'
 
   const addDevice = () => {
-    setDevices(prev => [...prev, {
+    const newDevice: DeviceRow = {
       id: uid(),
       manufacturer: '',
       model: '',
@@ -141,15 +276,20 @@ const [saving, setSaving] = useState(false)
       needsInspection: false,
       maxAllowed: 'Тип 3',
       fromImport: false,
-    }])
+    }
+    const newDevices = [...devices, newDevice]
+    setDevices(newDevices)
+    autoSelectHardware(newDevices, hardwarePrices)
   }
 
   const removeDevice = (id: string) => {
-    setDevices(prev => prev.filter(d => d.id !== id))
+    const newDevices = devices.filter(d => d.id !== id)
+    setDevices(newDevices)
+    autoSelectHardware(newDevices, hardwarePrices)
   }
 
   const updateDevice = (id: string, field: keyof DeviceRow, value: any) => {
-    setDevices(prev => prev.map(d => {
+    const newDevices = devices.map(d => {
       if (d.id !== id) return d
       const updated = { ...d, [field]: value }
 
@@ -194,7 +334,9 @@ const [saving, setSaving] = useState(false)
       }
 
       return updated
-    }))
+    })
+    setDevices(newDevices)
+    autoSelectHardware(newDevices, hardwarePrices)
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,7 +375,9 @@ const [saving, setSaving] = useState(false)
       fromImport: true,
     }))
 
-    setDevices(prev => [...prev, ...imported])
+    const allDevices = [...devices, ...imported]
+    setDevices(allDevices)
+    autoSelectHardware(allDevices, hardwarePrices)
     setImportLoading(false)
   }
 
@@ -261,13 +405,8 @@ const [saving, setSaving] = useState(false)
       const p = getPrice(type)
       if (p) {
         items.push({
-          license_type: type,
-          article: p.article,
-          name: p.name,
-          quantity: qty,
-          price_distributor: p.price_distributor,
-          price_partner: p.price_partner,
-          price_rrp: p.price_rrp,
+          license_type: type, article: p.article, name: p.name, quantity: qty,
+          price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
           sum_distributor: p.price_distributor * qty,
           sum_partner: p.price_partner * qty,
           sum_rrp: p.price_rrp * qty,
@@ -278,12 +417,32 @@ const [saving, setSaving] = useState(false)
       }
     }
 
+    if (!needsCC) {
+      hardware.filter(h => h.quantity > 0).forEach(h => {
+        items.push({
+          license_type: 'hardware',
+          article: h.article,
+          name: h.name + ' (с НДС)',
+          quantity: h.quantity,
+          price_distributor: h.price_distributor,
+          price_partner: h.price_partner,
+          price_rrp: h.price_rrp,
+          sum_distributor: h.sum_distributor,
+          sum_partner: h.sum_partner,
+          sum_rrp: h.sum_rrp,
+        })
+        totals.rrp += h.sum_rrp
+        totals.partner += h.sum_partner
+        totals.distributor += h.sum_distributor
+      })
+    }
+
     if (includeSupport && expertSupport && supportQty > 0) {
       const etp = expertSupport
       items.push({
         license_type: '-',
         article: etp.article,
-        name: etp.name,
+        name: etp.name + ' (с НДС)',
         quantity: supportQty,
         price_distributor: etp.price_distributor,
         price_partner: etp.price_partner,
@@ -321,8 +480,6 @@ const [saving, setSaving] = useState(false)
   if (noFunc.length > 0) issues.push(`${noFunc.length} устройств без функционала`)
   if (totalQty === 0) issues.push('Нет устройств для расчёта')
   const canSave = issues.length === 0
-
-  // Бессрочные требуют согласования руководителя
   const needsApproval = licenseTerm === 'perpetual'
 
   const doSave = async (comment: string) => {
@@ -330,32 +487,67 @@ const [saving, setSaving] = useState(false)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: calc, error } = await supabase.from('calculations').insert({
-      created_by: user.id,
+    const calcData: any = {
       client_name: clientName,
       project_name: projectName,
       sale_type: isPartner ? 'partner' : saleType,
-      status: needsApproval ? 'in_review' : 'draft',
+      status: needsApproval || needsCC ? 'in_review' : 'draft',
       license_term: licenseTerm,
+      needs_cc: needsCC,
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
       ...(comment ? { manager_comment: comment } : {}),
-    }).select().single()
+    }
 
-    if (error || !calc) { setSaving(false); return }
+    let calcId = editId
 
-    await supabase.from('calculation_items').insert(
-      calcResult.map(r => ({ ...r, calculation_id: calc.id }))
-    )
+    if (editId) {
+      await supabase.from('calculations').update(calcData).eq('id', editId)
+      await supabase.from('calculation_items').delete().eq('calculation_id', editId)
+      await supabase.from('calculation_hardware').delete().eq('calculation_id', editId)
+    } else {
+      const { data: calc, error } = await supabase.from('calculations').insert({
+        ...calcData,
+        created_by: user.id,
+      }).select().single()
+      if (error || !calc) { setSaving(false); return }
+      calcId = calc.id
+    }
+
+    if (!calcId) { setSaving(false); return }
+
+    if (calcResult.length > 0) {
+      await supabase.from('calculation_items').insert(
+        calcResult.map(r => ({ ...r, calculation_id: calcId }))
+      )
+    }
+
+    if (!needsCC && hardware.filter(h => h.quantity > 0).length > 0) {
+      await supabase.from('calculation_hardware').insert(
+        hardware.filter(h => h.quantity > 0).map(h => ({
+          calculation_id: calcId,
+          article: h.article,
+          name: h.name,
+          quantity: h.quantity,
+          price_distributor: h.price_distributor,
+          price_partner: h.price_partner,
+          price_rrp: h.price_rrp,
+          sum_distributor: h.sum_distributor,
+          sum_partner: h.sum_partner,
+          sum_rrp: h.sum_rrp,
+          includes_vat: true,
+        }))
+      )
+    }
 
     setSaving(false)
-    router.push(`/calculator/${calc.id}`)
+    router.push(`/calculator/${calcId}`)
   }
 
-const handleSave = async () => {
+  const handleSave = async () => {
     if (!canSave) return
-    if (licenseTerm === 'perpetual') {
+    if (needsApproval || needsCC) {
       setShowApprovalModal(true)
       return
     }
@@ -374,12 +566,24 @@ const handleSave = async () => {
     ? 'ТП не включена в КП. Предложите партнёру приобрести экспертную ТП отдельно.'
     : 'ТП не включена в КП. Предложите клиенту приобрести экспертную ТП отдельно.'
 
+  const hasHardware = summary['Тип 3'] > 0 || summary['Тип 4'] > 0
+
+  if (editLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500">Загружаем данные расчёта...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4">
-        <button onClick={() => router.push('/dashboard')}
+        <button onClick={() => router.push(editId ? `/calculator/${editId}` : '/dashboard')}
           className="text-gray-500 hover:text-gray-800 text-sm">← Назад</button>
-        <h1 className="text-lg font-semibold text-gray-900">Новый расчёт</h1>
+        <h1 className="text-lg font-semibold text-gray-900">
+          {editId ? 'Редактирование расчёта' : 'Новый расчёт'}
+        </h1>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
@@ -416,21 +620,17 @@ const handleSave = async () => {
             <div>
               <label className="block text-sm font-medium text-gray-800 mb-1">Тип лицензий</label>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setLicenseTerm('annual')}
+                <button onClick={() => setLicenseTerm('annual')}
                   className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${licenseTerm === 'annual' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
                   Годовые
                 </button>
-                <button
-                  onClick={() => setLicenseTerm('perpetual')}
+                <button onClick={() => setLicenseTerm('perpetual')}
                   className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${licenseTerm === 'perpetual' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
                   Бессрочные
                 </button>
               </div>
             </div>
           </div>
-
-          {/* Предупреждение о бессрочных */}
           {needsApproval && (
             <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2">
               <span className="text-amber-500 text-base mt-0.5">⚠</span>
@@ -578,10 +778,107 @@ const handleSave = async () => {
           )}
         </div>
 
+        {/* Оборудование */}
+        {hasHardware && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Оборудование</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Все позиции указаны с НДС</p>
+              </div>
+              {summary['Тип 4'] > 0 && (
+                <div className="flex items-center gap-3">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={needsCC} onChange={e => setNeedsCC(e.target.checked)} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                  <span className="text-sm text-gray-700">Подбор через Центр компетенций</span>
+                </div>
+              )}
+            </div>
+
+            {needsCC ? (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p className="text-sm font-medium text-amber-800">Оборудование будет подобрано Центром компетенций</p>
+                <p className="text-xs text-amber-600 mt-1">После сохранения расчёт будет отправлен в ЦК для подбора оборудования</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {hardware.map((h, i) => (
+                    <div key={h.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{h.name}</p>
+                        <p className="text-xs text-gray-500">{h.article}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input type="number" min={0} value={h.quantity}
+                          onChange={e => {
+                            const qty = Number(e.target.value) || 0
+                            const updated = [...hardware]
+                            updated[i] = {
+                              ...updated[i],
+                              quantity: qty,
+                              sum_distributor: updated[i].price_distributor * qty,
+                              sum_partner: updated[i].price_partner * qty,
+                              sum_rrp: updated[i].price_rrp * qty,
+                            }
+                            setHardware(updated)
+                          }}
+                          className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        <span className="text-xs text-gray-500">шт.</span>
+                        <span className="text-sm font-medium text-gray-900 w-36 text-right">
+                          {h.sum_rrp > 0 ? formatRub(h.sum_rrp) : 'по запросу'}
+                        </span>
+                        <button onClick={() => setHardware(prev => prev.filter(x => x.id !== h.id))}
+                          className="text-gray-300 hover:text-red-500 transition-colors text-xl leading-none">×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3">
+                  <select value="" onChange={e => {
+                    const article = e.target.value
+                    if (!article) return
+                    const p = hardwarePrices.find(h => h.article === article)
+                    if (!p) return
+                    if (hardware.find(h => h.article === article)) return
+                    setHardware(prev => [...prev, {
+                      id: uid(),
+                      article: p.article,
+                      name: p.name,
+                      quantity: 1,
+                      price_distributor: p.price_distributor,
+                      price_partner: p.price_partner,
+                      price_rrp: p.price_rrp,
+                      sum_distributor: p.price_distributor,
+                      sum_partner: p.price_partner,
+                      sum_rrp: p.price_rrp,
+                      includes_vat: true,
+                    }])
+                  }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">+ Добавить позицию оборудования...</option>
+                    {hardwarePrices
+                      .filter(p => !hardware.find(h => h.article === p.article))
+                      .filter((p, i, arr) => arr.findIndex(x => x.article === p.article) === i)
+                      .map(p => (
+                        <option key={p.article} value={p.article}>{p.name} — {p.article}</option>
+                      ))}
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Экспертная техподдержка */}
         {expertSupport && (
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">Техническая поддержка</h2>
+            <h2 className="text-base font-semibold text-gray-900 mb-4">
+              Техническая поддержка <span className="text-xs font-normal text-gray-500">(с НДС)</span>
+            </h2>
             <div className="flex items-start gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -592,7 +889,7 @@ const handleSave = async () => {
                 </label>
                 <div>
                   <p className="text-sm font-medium text-gray-900">Экспертная техподдержка (уровень 2)</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Пакет 10 часов · {formatRub(expertSupport.price_rrp)} за пакет</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Пакет 10 часов · {formatRub(expertSupport.price_rrp)} за пакет с НДС</p>
                 </div>
               </div>
               {includeSupport && (
@@ -649,14 +946,18 @@ const handleSave = async () => {
               </thead>
               <tbody>
                 {calcResult.map((r, i) => (
-                  <tr key={i} className="border-b border-gray-100">
+                  <tr key={i} className={`border-b border-gray-100 ${r.license_type === 'hardware' || r.license_type === '-' ? 'bg-gray-50' : ''}`}>
                     <td className="py-2 pr-4 text-gray-900">
                       <div>{r.name}</div>
                       <div className="text-xs text-gray-500">{r.article}</div>
                     </td>
                     <td className="py-2 px-3 text-right text-gray-900">{r.quantity}</td>
-                    <td className="py-2 px-3 text-right text-gray-500">{formatRub(getSaleSum(r) / r.quantity)}</td>
-                    <td className="py-2 pl-3 text-right font-medium text-gray-900">{formatRub(getSaleSum(r))}</td>
+                    <td className="py-2 px-3 text-right text-gray-500">
+                      {getSaleSum(r) > 0 ? formatRub(getSaleSum(r) / r.quantity) : 'по запросу'}
+                    </td>
+                    <td className="py-2 pl-3 text-right font-medium text-gray-900">
+                      {getSaleSum(r) > 0 ? formatRub(getSaleSum(r)) : 'по запросу'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -673,26 +974,33 @@ const handleSave = async () => {
 
         {/* Кнопки */}
         <div className="flex gap-3 justify-end pb-8">
-          <button onClick={() => router.push('/dashboard')}
+          <button onClick={() => router.push(editId ? `/calculator/${editId}` : '/dashboard')}
             className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             Отмена
           </button>
           <button onClick={handleSave} disabled={saving || !canSave}
             className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
-            {saving ? 'Сохраняем...' : needsApproval ? 'Отправить на согласование' : 'Сохранить расчёт'}
+            {saving ? 'Сохраняем...' : needsApproval || needsCC ? 'Отправить на согласование' : editId ? 'Сохранить изменения' : 'Сохранить расчёт'}
           </button>
         </div>
 
-{showApprovalModal && (
+        {/* Модалка отправки на согласование */}
+        {showApprovalModal && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-2">Отправить на согласование</h2>
-              <p className="text-sm text-gray-500 mb-4">Бессрочные лицензии требуют согласования руководителя.</p>
+              <h2 className="text-base font-semibold text-gray-900 mb-2">
+                {needsCC ? 'Отправить в Центр компетенций' : 'Отправить на согласование'}
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                {needsCC
+                  ? 'КП будет отправлено в ЦК для подбора оборудования.'
+                  : 'Бессрочные лицензии требуют согласования руководителя.'}
+              </p>
               <div>
                 <label className="block text-sm font-medium text-gray-800 mb-1">Комментарий (необязательно)</label>
                 <textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} rows={3}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Дополнительная информация для руководителя..." />
+                  placeholder="Дополнительная информация..." />
               </div>
               <div className="flex gap-3 justify-end mt-5">
                 <button onClick={() => setShowApprovalModal(false)}
@@ -701,12 +1009,13 @@ const handleSave = async () => {
                 </button>
                 <button onClick={async () => { setShowApprovalModal(false); await doSave(approvalComment) }}
                   className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-                  Отправить на согласование
+                  {needsCC ? 'Отправить в ЦК' : 'Отправить на согласование'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
       </main>
     </div>
   )
