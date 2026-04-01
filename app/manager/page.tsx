@@ -16,6 +16,7 @@ interface Calculation {
   total_distributor: number
   created_at: string
   approval_comment: string | null
+  approved_at: string | null
   profiles: { full_name: string | null; email: string }
 }
 
@@ -75,14 +76,15 @@ export default function ManagerPage() {
   }
 
   const handleApprove = async () => {
-    if (!approveModal) return
-    setProcessing(true)
+    if (!approveModal || !comment.trim() === false && approveModal.action === 'reject') return
+    if (approveModal.action === 'reject' && !comment.trim()) return
 
+    setProcessing(true)
     const { data: { user } } = await supabase.auth.getUser()
 
     await supabase.from('calculations').update({
       status: approveModal.action === 'approve' ? 'approved' : 'draft',
-      approval_comment: comment || null,
+      approval_comment: comment.trim() || null,
       approved_by: approveModal.action === 'approve' ? user?.id : null,
       approved_at: approveModal.action === 'approve' ? new Date().toISOString() : null,
     }).eq('id', approveModal.id)
@@ -144,97 +146,95 @@ export default function ManagerPage() {
             </p>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-6 py-3 font-medium text-gray-600">Клиент / Проект</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Менеджер</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Тип</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Лицензии</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Дата</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Статус</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">РРЦ</th>
-                  <th className="text-right px-6 py-3 font-medium text-gray-600"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr key={c.id}
-                    className={`border-b border-gray-100 ${i === filtered.length - 1 ? 'border-b-0' : ''} ${c.status === 'in_review' ? 'bg-yellow-50' : ''}`}>
-                    <td className="px-6 py-4">
+          <div className="space-y-3">
+            {filtered.map(c => (
+              <div key={c.id}
+                className={`bg-white rounded-2xl border p-5 ${c.status === 'in_review' ? 'border-yellow-200' : 'border-gray-200'}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-medium text-gray-900">{c.client_name || '—'}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{c.project_name || 'Без названия'}</p>
-                    </td>
-                    <td className="px-4 py-4 text-gray-600 text-xs">
-                      {(c.profiles as any)?.full_name || (c.profiles as any)?.email || '—'}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="text-xs text-gray-600">{saleTypeLabels[c.sale_type] || c.sale_type}</span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-lg ${c.license_term === 'perpetual' ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                        {c.license_term === 'perpetual' ? 'Бессрочные' : 'Годовые'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-gray-600">{formatDate(c.created_at)}</td>
-                    <td className="px-4 py-4">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-lg ${statusLabels[c.status]?.color}`}>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-lg ${statusLabels[c.status]?.color}`}>
                         {statusLabels[c.status]?.label}
                       </span>
-                    </td>
-                    <td className="px-4 py-4 text-right text-gray-900 font-medium">{formatRub(c.total_rrp)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => router.push(`/calculator/${c.id}`)}
-                        className="text-sm text-blue-600 hover:text-blue-800 mr-3">
-                        Открыть
-                      </button>
-                      {c.status === 'in_review' && (
-                        <>
-                          <button
-                            onClick={() => { setApproveModal({ id: c.id, action: 'approve' }); setComment('') }}
-                            className="text-sm text-green-600 hover:text-green-800 mr-3">
-                            Согласовать
-                          </button>
-                          <button
-                            onClick={() => { setApproveModal({ id: c.id, action: 'reject' }); setComment('') }}
-                            className="text-sm text-red-500 hover:text-red-700">
-                            Отклонить
-                          </button>
-                        </>
+                      {c.license_term === 'perpetual' && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700">
+                          Бессрочные
+                        </span>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-0.5">{c.project_name || 'Без названия'}</p>
+
+                    <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                      <span>Менеджер: {(c.profiles as any)?.full_name || (c.profiles as any)?.email || '—'}</span>
+                      <span>{saleTypeLabels[c.sale_type] || c.sale_type}</span>
+                      <span>{formatDate(c.created_at)}</span>
+                    </div>
+
+                    {c.approval_comment && (
+                      <div className={`mt-3 text-xs rounded-lg px-3 py-2 ${c.status === 'draft' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>
+                        <span className="font-medium">Комментарий: </span>{c.approval_comment}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <p className="text-lg font-semibold text-gray-900">{formatRub(c.total_rrp)}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">РРЦ</p>
+                    <p className="text-sm text-gray-600 mt-1">{formatRub(c.total_partner)}</p>
+                    <p className="text-xs text-gray-500">Партнёр</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => router.push(`/calculator/${c.id}`)}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                    Открыть расчёт
+                  </button>
+                  {c.status === 'in_review' && (
+                    <>
+                      <button
+                        onClick={() => { setApproveModal({ id: c.id, action: 'approve' }); setComment('') }}
+                        className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">
+                        Согласовать
+                      </button>
+                      <button
+                        onClick={() => { setApproveModal({ id: c.id, action: 'reject' }); setComment('') }}
+                        className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600">
+                        Отклонить
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </main>
 
-      {/* Модальное окно согласования */}
+      {/* Модальное окно */}
       {approveModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-2">
-              {approveModal.action === 'approve' ? 'Согласовать КП' : 'Отклонить КП'}
+              {approveModal.action === 'approve' ? '✓ Согласовать КП' : '✕ Отклонить КП'}
             </h2>
             <p className="text-sm text-gray-500 mb-4">
               {approveModal.action === 'approve'
-                ? 'КП будет переведено в статус "Согласован".'
-                : 'КП будет возвращено в статус "Черновик" для доработки.'}
+                ? 'КП будет переведено в статус "Согласован". Менеджер сможет скачать PDF.'
+                : 'КП будет возвращено менеджеру на доработку.'}
             </p>
             <div>
               <label className="block text-sm font-medium text-gray-800 mb-1">
-                Комментарий {approveModal.action === 'reject' ? '(обязательно)' : '(необязательно)'}
+                Комментарий {approveModal.action === 'reject' && <span className="text-red-500">*</span>}
               </label>
               <textarea
                 value={comment}
                 onChange={e => setComment(e.target.value)}
                 rows={3}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={approveModal.action === 'reject' ? 'Укажите причину отклонения...' : 'Дополнительные комментарии...'}
+                placeholder={approveModal.action === 'reject' ? 'Укажите причину отклонения...' : 'Дополнительный комментарий (необязательно)...'}
               />
             </div>
             <div className="flex gap-3 justify-end mt-5">
@@ -244,7 +244,7 @@ export default function ManagerPage() {
               </button>
               <button
                 onClick={handleApprove}
-                disabled={processing || (approveModal.action === 'reject' && !comment)}
+                disabled={processing || (approveModal.action === 'reject' && !comment.trim())}
                 className={`px-6 py-2 text-sm rounded-lg font-medium disabled:opacity-50 text-white ${approveModal.action === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'}`}>
                 {processing ? 'Обрабатываем...' : approveModal.action === 'approve' ? 'Согласовать' : 'Отклонить'}
               </button>

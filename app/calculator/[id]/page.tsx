@@ -20,16 +20,6 @@ interface CalcItem {
   sum_rrp: number
 }
 
-interface PriceRow {
-  license_type: string
-  min_quantity: number
-  price_distributor: number
-  price_partner: number
-  price_rrp: number
-  article: string
-  name: string
-}
-
 interface Calculation {
   id: string
   client_name: string
@@ -43,9 +33,20 @@ interface Calculation {
   notes: string
   created_at: string
   approval_comment: string | null
+  manager_comment: string | null
   approved_by: string | null
   approved_at: string | null
   calculation_items: CalcItem[]
+}
+
+interface PriceRow {
+  license_type: string
+  min_quantity: number
+  price_distributor: number
+  price_partner: number
+  price_rrp: number
+  article: string
+  name: string
 }
 
 interface LicenseInput {
@@ -95,12 +96,20 @@ export default function CalculationViewPage() {
 
   const [calc, setCalc] = useState<Calculation | null>(null)
   const [userRole, setUserRole] = useState<string>('')
+  const [userId, setUserId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copying, setCopying] = useState(false)
   const [prices, setPrices] = useState<PriceRow[]>([])
+
+  const [editComment, setEditComment] = useState('')
+  const [sendComment, setSendComment] = useState('')
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [showApproveModal, setShowApproveModal] = useState<'approve' | 'reject' | null>(null)
+  const [approveComment, setApproveComment] = useState('')
+  const [processing, setProcessing] = useState(false)
 
   const [clientName, setClientName] = useState('')
   const [projectName, setProjectName] = useState('')
@@ -117,6 +126,7 @@ export default function CalculationViewPage() {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      setUserId(user.id)
 
       const { data: prof } = await supabase
         .from('profiles').select('role').eq('id', user.id).single()
@@ -141,7 +151,6 @@ export default function CalculationViewPage() {
         if (supportItem && totalLic > 0) {
           setSupportYears(Math.round(supportItem.quantity / totalLic) || 1)
         }
-
         setLicenses(prev => prev.map(l => {
           const item = licItems.find(i => i.license_type === l.type)
           return { ...l, quantity: item ? item.quantity : 0 }
@@ -149,9 +158,7 @@ export default function CalculationViewPage() {
       }
 
       const { data: priceData } = await supabase
-        .from('price_list')
-        .select('*')
-        .eq('is_active', true)
+        .from('price_list').select('*').eq('is_active', true)
       if (priceData) setPrices(priceData)
 
       setLoading(false)
@@ -160,42 +167,34 @@ export default function CalculationViewPage() {
   }, [id])
 
   const isPartner = userRole === 'partner'
+  const isManager = userRole === 'manager'
+  const isManagerSales = userRole === 'manager_sales'
   const totalQty = licenses.reduce((s, l) => s + l.quantity, 0)
 
   const calcResults = () => {
-    const results = licenses
-      .filter(l => l.quantity > 0)
-      .map(l => {
-        const p = getPrice(
-          prices.filter(r => r.license_type === l.type && !r.article.includes('СТР')),
-          l.type, totalQty
-        )
-        if (!p) return null
-        return {
-          type: l.type, article: p.article, name: p.name, quantity: l.quantity,
-          price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
-          sum_distributor: p.price_distributor * l.quantity,
-          sum_partner: p.price_partner * l.quantity,
-          sum_rrp: p.price_rrp * l.quantity,
-        }
-      }).filter(Boolean) as any[]
+    const results = licenses.filter(l => l.quantity > 0).map(l => {
+      const p = getPrice(prices.filter(r => r.license_type === l.type && !r.article.includes('СТР')), l.type, totalQty)
+      if (!p) return null
+      return {
+        type: l.type, article: p.article, name: p.name, quantity: l.quantity,
+        price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
+        sum_distributor: p.price_distributor * l.quantity,
+        sum_partner: p.price_partner * l.quantity,
+        sum_rrp: p.price_rrp * l.quantity,
+      }
+    }).filter(Boolean) as any[]
 
-    const supportResults = licenses
-      .filter(l => l.quantity > 0)
-      .map(l => {
-        const p = getPrice(
-          prices.filter(r => r.license_type === l.type && r.article.includes('СТР')),
-          l.type, totalQty
-        )
-        if (!p) return null
-        return {
-          type: l.type, article: p.article, name: p.name, quantity: l.quantity * supportYears,
-          price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
-          sum_distributor: p.price_distributor * l.quantity * supportYears,
-          sum_partner: p.price_partner * l.quantity * supportYears,
-          sum_rrp: p.price_rrp * l.quantity * supportYears,
-        }
-      }).filter(Boolean) as any[]
+    const supportResults = licenses.filter(l => l.quantity > 0).map(l => {
+      const p = getPrice(prices.filter(r => r.license_type === l.type && r.article.includes('СТР')), l.type, totalQty)
+      if (!p) return null
+      return {
+        type: l.type, article: p.article, name: p.name, quantity: l.quantity * supportYears,
+        price_distributor: p.price_distributor, price_partner: p.price_partner, price_rrp: p.price_rrp,
+        sum_distributor: p.price_distributor * l.quantity * supportYears,
+        sum_partner: p.price_partner * l.quantity * supportYears,
+        sum_rrp: p.price_rrp * l.quantity * supportYears,
+      }
+    }).filter(Boolean) as any[]
 
     return [...results, ...supportResults]
   }
@@ -211,52 +210,77 @@ export default function CalculationViewPage() {
       rrp: acc.rrp + r.sum_rrp,
     }), { distributor: 0, partner: 0, rrp: 0 })
 
-    await supabase.from('calculations').update({
+    const updateData: any = {
       client_name: clientName,
       project_name: projectName,
       sale_type: saleType,
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
-    }).eq('id', calc.id)
+    }
 
+    // Руководитель оставляет approval_comment, менеджер — manager_comment
+    if (isManager && editComment.trim()) {
+      updateData.approval_comment = editComment.trim()
+    } else if (isManagerSales && editComment.trim()) {
+      updateData.manager_comment = editComment.trim()
+    }
+
+    await supabase.from('calculations').update(updateData).eq('id', calc.id)
     await supabase.from('calculation_items').delete().eq('calculation_id', calc.id)
 
     if (allResults.length > 0) {
       await supabase.from('calculation_items').insert(
         allResults.map(r => ({
           calculation_id: calc.id,
-          license_type: r.type,
-          article: r.article,
-          name: r.name,
-          quantity: r.quantity,
-          price_distributor: r.price_distributor,
-          price_partner: r.price_partner,
-          price_rrp: r.price_rrp,
-          sum_distributor: r.sum_distributor,
-          sum_partner: r.sum_partner,
-          sum_rrp: r.sum_rrp,
+          license_type: r.type, article: r.article, name: r.name, quantity: r.quantity,
+          price_distributor: r.price_distributor, price_partner: r.price_partner, price_rrp: r.price_rrp,
+          sum_distributor: r.sum_distributor, sum_partner: r.sum_partner, sum_rrp: r.sum_rrp,
         }))
       )
     }
 
     const { data } = await supabase
-      .from('calculations')
-      .select('*, calculation_items(*)')
-      .eq('id', calc.id)
-      .single()
+      .from('calculations').select('*, calculation_items(*)').eq('id', calc.id).single()
     if (data) setCalc(data as Calculation)
 
     setSaving(false)
     setIsEditing(false)
+    setEditComment('')
   }
 
-  const handleSendForApproval = async () => {
+const handleSendForApproval = async () => {
     if (!calc) return
-    await supabase.from('calculations')
-      .update({ status: 'in_review' })
-      .eq('id', calc.id)
-    setCalc({ ...calc, status: 'in_review' })
+    await supabase.from('calculations').update({
+      status: 'in_review',
+      manager_comment: sendComment.trim() || null,
+      approval_comment: null, // сбрасываем старый комментарий руководителя
+    }).eq('id', calc.id)
+    setCalc({ ...calc, status: 'in_review', manager_comment: sendComment.trim() || null, approval_comment: null })
+    setShowSendModal(false)
+    setSendComment('')
+  }
+
+  const handleApproveAction = async () => {
+    if (!calc || !showApproveModal) return
+    if (showApproveModal === 'reject' && !approveComment.trim()) return
+    setProcessing(true)
+
+    await supabase.from('calculations').update({
+      status: showApproveModal === 'approve' ? 'approved' : 'draft',
+      approval_comment: approveComment.trim() || null,
+      approved_by: showApproveModal === 'approve' ? userId : null,
+      approved_at: showApproveModal === 'approve' ? new Date().toISOString() : null,
+    }).eq('id', calc.id)
+
+    const { data } = await supabase
+      .from('calculations').select('*, calculation_items(*)').eq('id', calc.id).single()
+    if (data) setCalc(data as Calculation)
+
+    setShowApproveModal(null)
+    setApproveComment('')
+    setProcessing(false)
+    router.push('/dashboard')
   }
 
   const handleCopy = async () => {
@@ -266,37 +290,27 @@ export default function CalculationViewPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setCopying(false); return }
 
-    const { data: newCalc, error } = await supabase
-      .from('calculations')
-      .insert({
-        created_by: user.id,
-        client_name: calc.client_name + ' (копия)',
-        project_name: calc.project_name,
-        sale_type: calc.sale_type,
-        status: 'draft',
-        license_term: calc.license_term,
-        total_rrp: calc.total_rrp,
-        total_partner: calc.total_partner,
-        total_distributor: calc.total_distributor,
-      })
-      .select()
-      .single()
+    const { data: newCalc, error } = await supabase.from('calculations').insert({
+      created_by: user.id,
+      client_name: calc.client_name + ' (копия)',
+      project_name: calc.project_name,
+      sale_type: calc.sale_type,
+      status: 'draft',
+      license_term: calc.license_term,
+      total_rrp: calc.total_rrp,
+      total_partner: calc.total_partner,
+      total_distributor: calc.total_distributor,
+    }).select().single()
 
     if (error || !newCalc) { setCopying(false); return }
 
     await supabase.from('calculation_items').insert(
       calc.calculation_items.map(item => ({
         calculation_id: newCalc.id,
-        license_type: item.license_type,
-        article: item.article,
-        name: item.name,
-        quantity: item.quantity,
-        price_distributor: item.price_distributor,
-        price_partner: item.price_partner,
-        price_rrp: item.price_rrp,
-        sum_distributor: item.sum_distributor,
-        sum_partner: item.sum_partner,
-        sum_rrp: item.sum_rrp,
+        license_type: item.license_type, article: item.article, name: item.name,
+        quantity: item.quantity, price_distributor: item.price_distributor,
+        price_partner: item.price_partner, price_rrp: item.price_rrp,
+        sum_distributor: item.sum_distributor, sum_partner: item.sum_partner, sum_rrp: item.sum_rrp,
       }))
     )
 
@@ -318,32 +332,23 @@ export default function CalculationViewPage() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Загрузка...</p>
-      </div>
-    )
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-500">Загрузка...</p></div>
   }
 
   if (!calc) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Расчёт не найден</p>
-      </div>
-    )
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-500">Расчёт не найден</p></div>
   }
 
   const licenseItems = calc.calculation_items.filter(i => !i.article.includes('СТР') && i.license_type !== '-')
   const supportItems = calc.calculation_items.filter(i => i.article.includes('СТР') || i.license_type === '-')
+  const isRejected = calc.status === 'draft' && calc.approval_comment
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={() => router.push('/dashboard')}
-            className="text-gray-500 hover:text-gray-800 text-sm">
-            ← Назад
-          </button>
+            className="text-gray-500 hover:text-gray-800 text-sm">← Назад</button>
           <div>
             <h1 className="text-lg font-semibold text-gray-900">
               {isEditing ? 'Редактирование расчёта' : (calc.client_name || 'Без клиента')}
@@ -354,12 +359,12 @@ export default function CalculationViewPage() {
         {!isEditing && (
           <div className="flex items-center gap-2">
             {calc.license_term === 'perpetual' && (
-              <span className="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-700">
-                Бессрочные
-              </span>
+              <span className="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-700">Бессрочные</span>
             )}
-            <span className={`text-xs font-medium px-2 py-1 rounded-lg ${statusLabels[calc.status]?.color}`}>
-              {statusLabels[calc.status]?.label}
+            <span className={`text-xs font-medium px-2 py-1 rounded-lg ${
+              isManagerSales && isRejected ? 'bg-red-100 text-red-700' : statusLabels[calc.status]?.color
+            }`}>
+              {isManagerSales && isRejected ? 'Отклонён' : statusLabels[calc.status]?.label}
             </span>
             <span className="text-xs font-medium px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
               {saleTypeLabels[calc.sale_type]}
@@ -397,9 +402,7 @@ export default function CalculationViewPage() {
                     <label className="block text-sm font-medium text-gray-800 mb-1">Тип КП</label>
                     <select value={saleType} onChange={e => setSaleType(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {saleTypeOptions.map(o => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
+                      {saleTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                 )}
@@ -408,28 +411,34 @@ export default function CalculationViewPage() {
 
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
               <h2 className="text-base font-semibold text-gray-900 mb-1">Лицензии</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                Итого устройств: <span className="font-medium text-gray-900">{totalQty}</span>
-              </p>
+              <p className="text-sm text-gray-500 mb-4">Итого устройств: <span className="font-medium text-gray-900">{totalQty}</span></p>
               <div className="space-y-3">
                 {licenses.map((l, i) => (
                   <div key={l.type} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{l.label}</p>
                     </div>
-                    <input type="number" min={0} value={l.quantity || ''}
-                      placeholder="0"
+                    <input type="number" min={0} value={l.quantity || ''} placeholder="0"
                       onChange={e => {
                         const updated = [...licenses]
                         updated[i].quantity = Number(e.target.value) || 0
                         setLicenses(updated)
                       }}
-                      className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                      className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <span className="text-xs text-gray-500 w-6">шт.</span>
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Комментарий при редактировании */}
+            <div className={`rounded-2xl border p-4 ${isManager ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-200'}`}>
+              <p className="text-sm font-medium mb-2 ${isManager ? 'text-amber-800' : 'text-gray-700'}">
+                {isManager ? 'Комментарий руководителя' : 'Комментарий к изменениям'}
+              </p>
+              <textarea value={editComment} onChange={e => setEditComment(e.target.value)} rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                placeholder={isManager ? 'Комментарий для менеджера...' : 'Комментарий к изменениям...'} />
             </div>
 
             <div className="flex gap-3 justify-end pb-8">
@@ -445,14 +454,52 @@ export default function CalculationViewPage() {
           </>
         ) : (
           <>
-            {/* Статус согласования */}
-            {(calc.status === 'in_review' || calc.status === 'approved') && (
-              <div className={`rounded-2xl border p-4 ${calc.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-yellow-50 border-yellow-100'}`}>
-                <p className={`text-sm font-medium ${calc.status === 'approved' ? 'text-green-800' : 'text-yellow-800'}`}>
-                  {calc.status === 'approved' ? '✓ КП согласован' : '⏳ КП на согласовании у руководителя'}
+            {/* Комментарий руководителя — для менеджера */}
+            {isManagerSales && calc.approval_comment && calc.status !== 'in_review' && (
+              <div className={`rounded-2xl border p-4 ${calc.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                <p className={`text-sm font-medium mb-1 ${calc.status === 'approved' ? 'text-green-800' : 'text-red-800'}`}>
+                  {calc.status === 'approved' ? '✓ Согласован руководителем' : '✕ Отклонён руководителем'}
                 </p>
-                {calc.approval_comment && (
-                  <p className="text-sm text-gray-600 mt-1">{calc.approval_comment}</p>
+                <p className="text-sm text-gray-700 bg-white bg-opacity-60 rounded-lg px-3 py-2">
+                  <span className="font-medium text-gray-500 text-xs">Комментарий руководителя: </span>
+                  {calc.approval_comment}
+                </p>
+              </div>
+            )}
+
+            {/* Комментарий менеджера — для руководителя */}
+            {isManager && calc.manager_comment && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                <p className="text-sm font-medium text-blue-800 mb-1">Комментарий менеджера</p>
+                <p className="text-sm text-gray-700 bg-white bg-opacity-60 rounded-lg px-3 py-2">
+                  {calc.manager_comment}
+                </p>
+              </div>
+            )}
+
+            {/* Статус для руководителя */}
+            {isManager && calc.status === 'in_review' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center justify-between">
+                <p className="text-sm font-medium text-yellow-800">⏳ КП ожидает вашего решения</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowApproveModal('approve'); setApproveComment('') }}
+                    className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+                    Согласовать
+                  </button>
+                  <button onClick={() => { setShowApproveModal('reject'); setApproveComment('') }}
+                    className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium">
+                    Отклонить
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Статус in_review для менеджера */}
+            {isManagerSales && calc.status === 'in_review' && (
+              <div className="bg-yellow-50 border border-yellow-100 rounded-2xl p-4">
+                <p className="text-sm font-medium text-yellow-800">⏳ КП отправлено на согласование руководителю</p>
+                {calc.manager_comment && (
+                  <p className="text-xs text-yellow-700 mt-1">Ваш комментарий: {calc.manager_comment}</p>
                 )}
               </div>
             )}
@@ -569,8 +616,8 @@ export default function CalculationViewPage() {
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
                 К списку
               </button>
-              {calc.status === 'draft' && userRole === 'manager_sales' && (
-                <button onClick={handleSendForApproval}
+              {calc.status === 'draft' && isManagerSales && (
+                <button onClick={() => setShowSendModal(true)}
                   className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
                   На согласование
                 </button>
@@ -583,12 +630,76 @@ export default function CalculationViewPage() {
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
                 Редактировать
               </button>
-              <button onClick={handleDownloadPdf} disabled={generatingPdf}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
-                {generatingPdf ? 'Генерируем...' : 'Скачать PDF'}
+              <button onClick={handleDownloadPdf}
+                disabled={generatingPdf || (calc.license_term === 'perpetual' && calc.status !== 'approved')}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+                title={calc.license_term === 'perpetual' && calc.status !== 'approved' ? 'Требуется согласование руководителя' : ''}>
+                {generatingPdf ? 'Генерируем...' :
+                  calc.license_term === 'perpetual' && calc.status !== 'approved' ? '🔒 Ожидает согласования' : 'Скачать PDF'}
               </button>
             </div>
           </>
+        )}
+
+        {/* Модалка — отправить на согласование */}
+        {showSendModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-2">Отправить на согласование</h2>
+              <p className="text-sm text-gray-500 mb-4">КП будет отправлено руководителю на согласование.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Комментарий (необязательно)</label>
+                <textarea value={sendComment} onChange={e => setSendComment(e.target.value)} rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Дополнительная информация для руководителя..." />
+              </div>
+              <div className="flex gap-3 justify-end mt-5">
+                <button onClick={() => setShowSendModal(false)}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                  Отмена
+                </button>
+                <button onClick={handleSendForApproval}
+                  className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                  Отправить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Модалка — согласовать/отклонить */}
+        {showApproveModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-2">
+                {showApproveModal === 'approve' ? '✓ Согласовать КП' : '✕ Отклонить КП'}
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                {showApproveModal === 'approve'
+                  ? 'КП будет переведено в статус "Согласован".'
+                  : 'КП будет возвращено менеджеру на доработку.'}
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">
+                  Комментарий {showApproveModal === 'reject' && <span className="text-red-500">*</span>}
+                </label>
+                <textarea value={approveComment} onChange={e => setApproveComment(e.target.value)} rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={showApproveModal === 'reject' ? 'Укажите причину отклонения...' : 'Дополнительный комментарий (необязательно)...'} />
+              </div>
+              <div className="flex gap-3 justify-end mt-5">
+                <button onClick={() => setShowApproveModal(null)}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                  Отмена
+                </button>
+                <button onClick={handleApproveAction}
+                  disabled={processing || (showApproveModal === 'reject' && !approveComment.trim())}
+                  className={`px-6 py-2 text-sm rounded-lg font-medium disabled:opacity-50 text-white ${showApproveModal === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'}`}>
+                  {processing ? 'Обрабатываем...' : showApproveModal === 'approve' ? 'Согласовать' : 'Отклонить'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

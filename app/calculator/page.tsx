@@ -95,7 +95,9 @@ export default function CalculatorPage() {
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState('')
   const [fileName, setFileName] = useState('')
-  const [saving, setSaving] = useState(false)
+const [saving, setSaving] = useState(false)
+  const [showApprovalModal, setShowApprovalModal] = useState(false)
+  const [approvalComment, setApprovalComment] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -323,10 +325,8 @@ export default function CalculatorPage() {
   // Бессрочные требуют согласования руководителя
   const needsApproval = licenseTerm === 'perpetual'
 
-  const handleSave = async () => {
-    if (!canSave) return
+  const doSave = async (comment: string) => {
     setSaving(true)
-
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
@@ -340,6 +340,7 @@ export default function CalculatorPage() {
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
+      ...(comment ? { manager_comment: comment } : {}),
     }).select().single()
 
     if (error || !calc) { setSaving(false); return }
@@ -350,6 +351,15 @@ export default function CalculatorPage() {
 
     setSaving(false)
     router.push(`/calculator/${calc.id}`)
+  }
+
+const handleSave = async () => {
+    if (!canSave) return
+    if (licenseTerm === 'perpetual') {
+      setShowApprovalModal(true)
+      return
+    }
+    await doSave('')
   }
 
   const supportHint = isPartner
@@ -673,6 +683,30 @@ export default function CalculatorPage() {
           </button>
         </div>
 
+{showApprovalModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-2">Отправить на согласование</h2>
+              <p className="text-sm text-gray-500 mb-4">Бессрочные лицензии требуют согласования руководителя.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Комментарий (необязательно)</label>
+                <textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Дополнительная информация для руководителя..." />
+              </div>
+              <div className="flex gap-3 justify-end mt-5">
+                <button onClick={() => setShowApprovalModal(false)}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                  Отмена
+                </button>
+                <button onClick={async () => { setShowApprovalModal(false); await doSave(approvalComment) }}
+                  className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                  Отправить на согласование
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )
