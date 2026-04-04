@@ -24,6 +24,8 @@ interface Calculation {
   manager_comment: string | null
   calculation_items: CalcItem[] | undefined
   profiles: { full_name: string | null; email: string } | null
+  cc_comment: string | null
+  needs_cc: boolean
 }
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -79,6 +81,15 @@ function CommentBadge({ c, isManagerSales, isManager }: {
     )
   }
 
+  // Менеджер по продажам видит комментарий ЦК после завершения подбора
+  if (isManagerSales && c.cc_comment && !c.needs_cc) {
+    return (
+      <div className="mt-1.5 text-xs rounded-lg px-2 py-1.5 bg-blue-50 text-blue-700">
+        <span className="font-medium">💬 Центр компетенций: </span>{c.cc_comment}
+      </div>
+    )
+  }
+
   // Менеджер по продажам видит свой комментарий если КП на согласовании
   if (isManagerSales && c.manager_comment && c.status === 'in_review') {
     return (
@@ -110,6 +121,11 @@ export default function DashboardPage() {
   const [bulkProcessing, setBulkProcessing] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState<'approve' | 'reject' | null>(null)
   const [bulkComment, setBulkComment] = useState('')
+  const [searchClient, setSearchClient] = useState('')
+  const [filterSaleType, setFilterSaleType] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
 
   const loadCalcs = useCallback(async () => {
     const { data: calcs } = await supabase
@@ -147,12 +163,16 @@ export default function DashboardPage() {
   const isAdmin = profile?.role === 'admin'
   const isManager = profile?.role === 'manager'
   const isManagerSales = profile?.role === 'manager_sales'
-
+  const isCC = profile?.role === 'competence_center'
   const pendingCount = calculations.filter(c => c.status === 'in_review').length
 
-  const filtered = filter === 'in_review'
-    ? calculations.filter(c => c.status === 'in_review')
-    : calculations
+  const filtered = calculations
+    .filter(c => filter === 'in_review' ? c.status === 'in_review' : true)
+    .filter(c => searchClient ? (c.client_name || '').toLowerCase().includes(searchClient.toLowerCase()) : true)
+    .filter(c => filterSaleType ? c.sale_type === filterSaleType : true)
+    .filter(c => filterStatus ? c.status === filterStatus : true)
+    .filter(c => filterDateFrom ? new Date(c.created_at) >= new Date(filterDateFrom) : true)
+    .filter(c => filterDateTo ? new Date(c.created_at) <= new Date(filterDateTo + 'T23:59:59') : true)
 
   const toggleSelect = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -223,7 +243,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
-              {isManager ? 'Все расчёты' : 'Мои расчёты'}
+              {isManager || isCC ? 'Все расчёты' : 'Мои расчёты'}
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">{calculations.length} расчётов</p>
           </div>
@@ -246,10 +266,16 @@ export default function DashboardPage() {
                 Пользователи
               </button>
             )}
-            {!isManager && (
+            {!isManager && !isCC && (
               <button onClick={() => router.push('/calculator')}
                 className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
                 + Новый расчёт
+              </button>
+            )}
+            {isCC && (
+              <button onClick={() => router.push('/cc')}
+                className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700 transition-colors">
+                Задачи ЦК
               </button>
             )}
           </div>
@@ -292,6 +318,42 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Панель фильтров */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input
+            type="text"
+            value={searchClient}
+            onChange={e => setSearchClient(e.target.value)}
+            placeholder="Поиск по клиенту..."
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+          />
+          <select value={filterSaleType} onChange={e => setFilterSaleType(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="">Все типы КП</option>
+            <option value="partner">Партнёрское</option>
+            <option value="direct">Прямое</option>
+            <option value="distributor">Дистрибьюторское</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="">Все статусы</option>
+            <option value="draft">Черновик</option>
+            <option value="in_review">На согласовании</option>
+            <option value="approved">Согласован</option>
+            <option value="sent">Отправлен</option>
+          </select>
+          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          {(searchClient || filterSaleType || filterStatus || filterDateFrom || filterDateTo) && (
+            <button onClick={() => { setSearchClient(''); setFilterSaleType(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }}
+              className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50">
+              Сбросить
+            </button>
+          )}
+        </div>
+
         {filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
             <p className="text-gray-400 text-sm">
@@ -332,12 +394,14 @@ export default function DashboardPage() {
               <tbody>
                 {filtered.map((c, i) => {
                   const isSelected = selected.includes(c.id)
-                  const needsApproval = c.status === 'in_review'
+                  const needsCC = !!c.needs_cc
+                  const needsApproval = c.status === 'in_review' && !needsCC
                   const isRejected = c.status === 'draft' && !!c.approval_comment
+                  const calcHref = isCC && needsCC ? `/cc/${c.id}` : `/calculator/${c.id}`
                   return (
                     <tr key={c.id}
                       className={`border-b border-gray-100 transition-colors ${i === filtered.length - 1 ? 'border-b-0' : ''}
-                        ${isSelected ? 'bg-blue-50' : needsApproval ? 'bg-yellow-50 hover:bg-yellow-100' : isRejected && isManagerSales ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
+                        ${isSelected ? 'bg-blue-50' : needsCC ? 'bg-indigo-50 hover:bg-indigo-100' : needsApproval ? 'bg-yellow-50 hover:bg-yellow-100' : isRejected && isManagerSales ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
 
                       {isManager && filter === 'in_review' && (
                         <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
@@ -349,19 +413,19 @@ export default function DashboardPage() {
                         </td>
                       )}
 
-                      <td className="px-6 py-4 cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>
+                      <td className="px-6 py-4 cursor-pointer" onClick={() => router.push(calcHref)}>
                         <p className="font-medium text-gray-900">{c.client_name || '—'}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{c.project_name || 'Без названия'}</p>
                         <CommentBadge c={c} isManagerSales={isManagerSales} isManager={isManager} />
                       </td>
 
                       {isManager && (
-                        <td className="px-4 py-4 text-xs text-gray-600 cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>
+                        <td className="px-4 py-4 text-xs text-gray-600 cursor-pointer" onClick={() => router.push(calcHref)}>
                           {(c.profiles as any)?.full_name || (c.profiles as any)?.email || '—'}
                         </td>
                       )}
 
-                      <td className="px-4 py-4 cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>
+                      <td className="px-4 py-4 cursor-pointer" onClick={() => router.push(calcHref)}>
                         <span className={`inline-block text-xs font-medium px-2 py-1 rounded-lg whitespace-nowrap ${saleTypeLabels[c.sale_type]?.color}`}>
                           {saleTypeLabels[c.sale_type]?.label || c.sale_type}
                         </span>
@@ -371,28 +435,34 @@ export default function DashboardPage() {
                       </td>
 
                       {licenseTypes.map(type => (
-                        <td key={type} className="px-3 py-4 text-center cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>
+                        <td key={type} className="px-3 py-4 text-center cursor-pointer" onClick={() => router.push(calcHref)}>
                           {getLicenseQty(c.calculation_items, type)
                             ? <span className="font-medium text-gray-900">{getLicenseQty(c.calculation_items, type)}</span>
                             : <span className="text-gray-300">—</span>}
                         </td>
                       ))}
 
-                      <td className="px-4 py-4 text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>{formatDate(c.created_at)}</td>
+                      <td className="px-4 py-4 text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(calcHref)}>{formatDate(c.created_at)}</td>
 
-                      <td className="px-4 py-4 cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>
-                        <span className={`inline-block text-xs font-medium px-2 py-1 rounded-lg whitespace-nowrap ${
-                          isManagerSales && isRejected ? 'bg-red-100 text-red-700' : statusLabels[c.status]?.color
-                        }`}>
-                          {isManagerSales && isRejected ? 'Отклонён' : (statusLabels[c.status]?.label || c.status)}
-                        </span>
+                      <td className="px-4 py-4 cursor-pointer" onClick={() => router.push(calcHref)}>
+                        {needsCC ? (
+                          <span className="inline-block text-xs font-medium px-2 py-1 rounded-lg whitespace-nowrap bg-indigo-100 text-indigo-700">
+                            У ЦК
+                          </span>
+                        ) : (
+                          <span className={`inline-block text-xs font-medium px-2 py-1 rounded-lg whitespace-nowrap ${
+                            isManagerSales && isRejected ? 'bg-red-100 text-red-700' : statusLabels[c.status]?.color
+                          }`}>
+                            {isManagerSales && isRejected ? 'Отклонён' : (statusLabels[c.status]?.label || c.status)}
+                          </span>
+                        )}
                       </td>
 
                       {!isPartner && (
-                        <td className="px-4 py-4 text-right text-gray-500 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>{formatRub(c.total_distributor)}</td>
+                        <td className="px-4 py-4 text-right text-gray-500 whitespace-nowrap cursor-pointer" onClick={() => router.push(calcHref)}>{formatRub(c.total_distributor)}</td>
                       )}
-                      <td className="px-4 py-4 text-right text-gray-700 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>{formatRub(c.total_partner)}</td>
-                      <td className="px-6 py-4 text-right font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/calculator/${c.id}`)}>{formatRub(c.total_rrp)}</td>
+                      <td className="px-4 py-4 text-right text-gray-700 whitespace-nowrap cursor-pointer" onClick={() => router.push(calcHref)}>{formatRub(c.total_partner)}</td>
+                      <td className="px-6 py-4 text-right font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(calcHref)}>{formatRub(c.total_rrp)}</td>
                     </tr>
                   )
                 })}

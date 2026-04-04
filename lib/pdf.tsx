@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer'
 
 Font.register({
   family: 'Roboto',
@@ -10,47 +10,142 @@ Font.register({
   ]
 })
 
-const styles = StyleSheet.create({
-  page: { fontFamily: 'Roboto', fontSize: 9, padding: 30, color: '#1a1a1a' },
-  header: { marginBottom: 20 },
-  title: { fontSize: 18, fontWeight: 700, color: '#1e40af', marginBottom: 4 },
-  metaRow: { flexDirection: 'row', gap: 20, marginTop: 8 },
-  metaItem: { flexDirection: 'column' },
-  metaLabel: { fontSize: 8, color: '#9ca3af', marginBottom: 2 },
-  metaValue: { fontSize: 9, fontWeight: 500, color: '#111827' },
-  sectionTitle: { fontSize: 11, fontWeight: 700, color: '#111827', marginBottom: 6, marginTop: 14 },
-  sectionNote: { fontSize: 8, color: '#6b7280', marginBottom: 4 },
+const S = StyleSheet.create({
+  page: {
+    fontFamily: 'Roboto',
+    fontSize: 9,
+    paddingHorizontal: 45,
+    paddingTop: 30,
+    paddingBottom: 55,
+    color: '#1a1a1a',
+  },
+
+  // ── Шапка ──────────────────────────────────────────
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#1a5276',
+    paddingBottom: 10,
+    marginBottom: 10,
+  },
+  logo: { width: 110, height: 44, objectFit: 'contain' },
+  logoPlaceholder: {
+    width: 110,
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#1a5276',
+    paddingTop: 10,
+  },
+  companyBlock: { flex: 1, textAlign: 'right' },
+  companyName: { fontSize: 8, fontWeight: 700, color: '#111827', marginBottom: 2 },
+  companyDetail: { fontSize: 7, color: '#555555', lineHeight: 1.5 },
+
+  // ── Исх. / город ────────────────────────────────────
+  docMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  docMetaText: { fontSize: 8, color: '#444444' },
+
+  // ── Кому ────────────────────────────────────────────
+  recipientLine: { fontSize: 9, marginBottom: 2 },
+
+  // ── Заголовок КП ────────────────────────────────────
+  kpTitle: {
+    fontSize: 12,
+    fontWeight: 700,
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
+
+  // ── Вводный текст ───────────────────────────────────
+  introText: { fontSize: 9, marginBottom: 8, lineHeight: 1.5 },
+
+  // ── Краткие итоги (шапка стоимостей) ───────────────
+  summaryBlock: { marginBottom: 12 },
+  summaryLine: { fontSize: 9, marginBottom: 3, lineHeight: 1.4 },
+
+  // ── Таблицы ─────────────────────────────────────────
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#1a5276',
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  sectionNote: { fontSize: 7, color: '#6b7280', marginBottom: 3 },
   table: { width: '100%' },
-  tableHead: { flexDirection: 'row', backgroundColor: '#1e40af', borderRadius: 4, paddingVertical: 5, paddingHorizontal: 6, marginBottom: 2 },
-  tableHeadCell: { color: '#ffffff', fontWeight: 700, fontSize: 8 },
-  tableRow: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6, borderBottomWidth: 0.5, borderBottomColor: '#f3f4f6' },
-  tableRowAlt: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6, backgroundColor: '#f9fafb', borderBottomWidth: 0.5, borderBottomColor: '#f3f4f6' },
-  colArticle: { width: '14%' },
-  colName: { width: '38%' },
-  colQty: { width: '8%', textAlign: 'right' },
-  colDistrib: { width: '13%', textAlign: 'right' },
-  colPartner: { width: '13%', textAlign: 'right' },
-  colRrp: { width: '14%', textAlign: 'right' },
-  colArticleNoDistrib: { width: '16%' },
-  colNameNoDistrib: { width: '46%' },
-  colQtyNoDistrib: { width: '10%', textAlign: 'right' },
-  colPartnerNoDistrib: { width: '14%', textAlign: 'right' },
-  colRrpNoDistrib: { width: '14%', textAlign: 'right' },
-  totalsBlock: { marginTop: 16, flexDirection: 'row', gap: 10 },
-  totalCard: { flex: 1, backgroundColor: '#f9fafb', borderRadius: 6, padding: 10 },
-  totalCardHighlight: { flex: 1, backgroundColor: '#eff6ff', borderRadius: 6, padding: 10 },
-  totalLabel: { fontSize: 8, color: '#6b7280', marginBottom: 3 },
-  totalValue: { fontSize: 13, fontWeight: 700, color: '#111827' },
-  totalValueHighlight: { fontSize: 13, fontWeight: 700, color: '#1e40af' },
-  divider: { borderBottomWidth: 0.5, borderBottomColor: '#e5e7eb', marginVertical: 10 },
-  badge: { backgroundColor: '#eff6ff', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 },
-  badgeText: { fontSize: 8, fontWeight: 500, color: '#1e40af' },
-  footer: { position: 'absolute', bottom: 20, left: 30, right: 30, flexDirection: 'row', justifyContent: 'space-between' },
-  footerText: { fontSize: 7, color: '#9ca3af' },
-  vatNote: { fontSize: 7, color: '#9ca3af', marginTop: 2 },
-  ccBlock: { backgroundColor: '#fffbeb', borderRadius: 6, padding: 10, marginTop: 14 },
-  ccText: { fontSize: 9, color: '#92400e' },
+  thead: {
+    flexDirection: 'row',
+    backgroundColor: '#1a5276',
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+    marginBottom: 1,
+  },
+  theadCell: { color: '#ffffff', fontWeight: 700, fontSize: 7.5 },
+  trow: {
+    flexDirection: 'row',
+    paddingVertical: 3,
+    paddingHorizontal: 5,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+  },
+  trowAlt: {
+    flexDirection: 'row',
+    paddingVertical: 3,
+    paddingHorizontal: 5,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+  },
+  cArt:   { width: '15%', fontSize: 7.5 },
+  cName:  { width: '47%', fontSize: 7.5 },
+  cQty:   { width: '8%',  textAlign: 'right', fontSize: 7.5 },
+  cPrice: { width: '15%', textAlign: 'right', fontSize: 7.5 },
+  cSum:   { width: '15%', textAlign: 'right', fontSize: 7.5 },
+
+  // Works columns
+  cwName:  { width: '57%', fontSize: 7.5 },
+  cwQty:   { width: '8%',  textAlign: 'right', fontSize: 7.5 },
+  cwUnit:  { width: '10%', fontSize: 7.5 },
+  cwSum:   { width: '25%', textAlign: 'right', fontSize: 7.5 },
+
+  // ── Итог / срок ──────────────────────────────────────
+  totalsBlock: { marginTop: 14 },
+  totalLine: { fontSize: 10, fontWeight: 700, color: '#1a5276', marginBottom: 3 },
+  vatNote: { fontSize: 7, color: '#9ca3af', marginTop: 3 },
+  validityText: { fontSize: 8.5, color: '#444444', marginTop: 10 },
+
+  // ── Подпись ──────────────────────────────────────────
+  signatureBlock: { marginTop: 28 },
+  signatureLine: { fontSize: 9, lineHeight: 1.6 },
+
+  // ── Сноски / прочее ──────────────────────────────────
+  ccBlock: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 4,
+    padding: 8,
+    marginTop: 10,
+  },
+  ccText: { fontSize: 8, color: '#92400e' },
+
+  // ── Нижний колонтитул (номер страницы) ──────────────
+  pageFooter: {
+    position: 'absolute',
+    bottom: 20,
+    left: 45,
+    right: 45,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  pageFooterText: { fontSize: 7, color: '#9ca3af' },
 })
+
+// ─── helpers ────────────────────────────────────────────────────────────────
 
 function formatRub(n: number) {
   if (!n && n !== 0) return '—'
@@ -61,11 +156,7 @@ function formatDate(s: string) {
   return new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
-const saleTypeLabels: Record<string, string> = {
-  partner: 'Партнёрское КП',
-  direct: 'Прямое КП (РРЦ)',
-  distributor: 'Дистрибьюторское КП',
-}
+// ─── interfaces ─────────────────────────────────────────────────────────────
 
 interface CalcItem {
   id: number
@@ -89,6 +180,21 @@ interface HardwareItem {
   includes_vat: boolean
 }
 
+interface WorkItem {
+  id: number
+  name: string
+  quantity: number
+  unit: string
+  price_rrp: number
+  sum_rrp: number
+}
+
+interface TripItem {
+  id: number
+  days: number
+  sum: number
+}
+
 interface Calculation {
   id: string
   client_name: string
@@ -102,169 +208,291 @@ interface Calculation {
   needs_cc: boolean
   calculation_items: CalcItem[]
   calculation_hardware?: HardwareItem[]
+  calculation_works?: WorkItem[]
+  calculation_trips?: TripItem[]
 }
 
 interface Props {
   calc: Calculation
   isPartner: boolean
   saleType?: string
+  logoUrl?: string
 }
 
-function TableRows({ items, priceCol }: { items: any[]; priceCol: 'distributor' | 'partner' | 'rrp' }) {
+// ─── sub-components ─────────────────────────────────────────────────────────
+
+function TableRows({ items, priceCol }: { items: CalcItem[] | HardwareItem[]; priceCol: 'distributor' | 'partner' | 'rrp' }) {
   const getSum = (item: any) => {
     if (priceCol === 'distributor') return item.sum_distributor
     if (priceCol === 'partner') return item.sum_partner
     return item.sum_rrp
   }
   const getPrice = (item: any) => {
-    const sum = getSum(item)
-    return sum > 0 && item.quantity > 0 ? sum / item.quantity : 0
+    const s = getSum(item)
+    return s > 0 && item.quantity > 0 ? s / item.quantity : 0
   }
-
-  const colLabel = priceCol === 'distributor' ? 'Дистрибьютор' : priceCol === 'partner' ? 'Партнёр' : 'РРЦ'
+  const colLabel = 'Сумма'
 
   return (
     <>
-      <View style={styles.tableHead}>
-        <Text style={[styles.tableHeadCell, styles.colArticleNoDistrib]}>Артикул</Text>
-        <Text style={[styles.tableHeadCell, styles.colNameNoDistrib]}>Наименование</Text>
-        <Text style={[styles.tableHeadCell, styles.colQtyNoDistrib]}>Кол-во</Text>
-        <Text style={[styles.tableHeadCell, styles.colPartnerNoDistrib]}>Цена за ед.</Text>
-        <Text style={[styles.tableHeadCell, styles.colRrpNoDistrib]}>{colLabel}</Text>
+      <View style={S.thead}>
+        <Text style={[S.theadCell, S.cArt]}>Артикул</Text>
+        <Text style={[S.theadCell, S.cName]}>Наименование</Text>
+        <Text style={[S.theadCell, S.cQty]}>Кол.</Text>
+        <Text style={[S.theadCell, S.cPrice]}>Цена за ед.</Text>
+        <Text style={[S.theadCell, S.cSum]}>{colLabel}</Text>
       </View>
-      {items.map((item, i) => (
-        <View key={item.id ?? i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-          <Text style={styles.colArticleNoDistrib}>{item.article}</Text>
-          <Text style={styles.colNameNoDistrib}>{item.name}</Text>
-          <Text style={styles.colQtyNoDistrib}>{item.quantity}</Text>
-          <Text style={styles.colPartnerNoDistrib}>
-            {getPrice(item) > 0 ? formatRub(getPrice(item)) : 'по запросу'}
-          </Text>
-          <Text style={styles.colRrpNoDistrib}>
-            {getSum(item) > 0 ? formatRub(getSum(item)) : 'по запросу'}
-          </Text>
+      {items.map((item: any, i: number) => (
+        <View key={item.id ?? i} style={i % 2 === 0 ? S.trow : S.trowAlt}>
+          <Text style={S.cArt}>{item.article}</Text>
+          <Text style={S.cName}>{item.name}</Text>
+          <Text style={S.cQty}>{item.quantity}</Text>
+          <Text style={S.cPrice}>{getPrice(item) > 0 ? formatRub(getPrice(item)) : 'по запросу'}</Text>
+          <Text style={S.cSum}>{getSum(item) > 0 ? formatRub(getSum(item)) : 'по запросу'}</Text>
         </View>
       ))}
     </>
   )
 }
 
-export function KpDocument({ calc, isPartner, saleType }: Props) {
+function WorksTableRows({ items }: { items: WorkItem[] }) {
+  return (
+    <>
+      <View style={S.thead}>
+        <Text style={[S.theadCell, S.cwName]}>Наименование</Text>
+        <Text style={[S.theadCell, S.cwQty]}>Кол.</Text>
+        <Text style={[S.theadCell, S.cwUnit]}>Ед.</Text>
+        <Text style={[S.theadCell, S.cwSum]}>Сумма</Text>
+      </View>
+      {items.map((item, i) => (
+        <View key={item.id ?? i} style={i % 2 === 0 ? S.trow : S.trowAlt}>
+          <Text style={S.cwName}>{item.name}</Text>
+          <Text style={S.cwQty}>{item.quantity}</Text>
+          <Text style={S.cwUnit}>{item.unit}</Text>
+          <Text style={S.cwSum}>{formatRub(item.sum_rrp)}</Text>
+        </View>
+      ))}
+    </>
+  )
+}
+
+// ─── main document ──────────────────────────────────────────────────────────
+
+export function KpDocument({ calc, isPartner, saleType, logoUrl }: Props) {
   const effectiveSaleType = saleType || calc.sale_type
   const priceCol: 'distributor' | 'partner' | 'rrp' =
     effectiveSaleType === 'distributor' ? 'distributor' :
-    effectiveSaleType === 'direct' ? 'rrp' : 'partner'
-  // Лицензии — только позиции с license_type не hardware и не '-', без СТР
-  const licenseItems = calc.calculation_items.filter(i =>
+    effectiveSaleType === 'direct'      ? 'rrp'         : 'partner'
+
+  const licenseItems  = calc.calculation_items.filter(i =>
     i.license_type !== 'hardware' &&
     i.license_type !== '-' &&
     !i.article.includes('СТР') &&
     !i.article.includes('ETP')
   )
-
-  // Оборудование из calculation_hardware
-  const hardwareItems = calc.calculation_hardware || []
-
-  // Техподдержка — ETP и СТР из items
-  const supportItems = calc.calculation_items.filter(i =>
+  const supportItems  = calc.calculation_items.filter(i =>
     i.article.includes('ETP') || i.article.includes('СТР')
   )
+  const hardwareItems = calc.calculation_hardware || []
+  const worksItems    = calc.calculation_works    || []
+  const tripsItems    = calc.calculation_trips    || []
 
   const isPerpetual = calc.license_term === 'perpetual'
 
+  // Подитоги для вводного блока
+  const getItemSum = (item: any) =>
+    priceCol === 'distributor' ? item.sum_distributor :
+    priceCol === 'partner'     ? item.sum_partner     : item.sum_rrp
+
+  const licenseTotal  = licenseItems.reduce((s, i) => s + (getItemSum(i) || 0), 0)
+  const supportTotal  = supportItems.reduce((s, i) => s + (getItemSum(i) || 0), 0)
+  const hardwareTotal = hardwareItems.reduce((s, i) => s + (getItemSum(i) || 0), 0)
+  const worksTotal    = worksItems.reduce((s, i) => s + (i.sum_rrp || 0), 0)
+                      + tripsItems.reduce((s, i) => s + (i.sum || 0), 0)
+
+  const totalSum = priceCol === 'distributor' ? calc.total_distributor :
+                   priceCol === 'rrp'         ? calc.total_rrp         : calc.total_partner
+
+  const totalLabel = 'Итого по КП'
+
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <Page size="A4" style={S.page}>
 
-        {/* Шапка */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Смарт Принт</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>
-              {saleTypeLabels[calc.sale_type] || calc.sale_type}
-              {isPerpetual ? ' · Бессрочные лицензии' : ' · Годовые лицензии'}
-            </Text>
-          </View>
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Клиент</Text>
-              <Text style={styles.metaValue}>{calc.client_name || '—'}</Text>
-            </View>
-            {calc.project_name && (
-              <View style={styles.metaItem}>
-                <Text style={styles.metaLabel}>Проект</Text>
-                <Text style={styles.metaValue}>{calc.project_name}</Text>
-              </View>
-            )}
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Дата</Text>
-              <Text style={styles.metaValue}>{formatDate(calc.created_at)}</Text>
-            </View>
+        {/* ── ШАПКА ЙОДА ─────────────────────────────────────── */}
+        <View style={S.headerRow}>
+          {logoUrl ? (
+            <Image style={S.logo} src={logoUrl} />
+          ) : (
+            <Text style={S.logoPlaceholder}>ООО «ЙОДА»</Text>
+          )}
+          <View style={S.companyBlock}>
+            <Text style={S.companyName}>ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «ЙОДА»</Text>
+            <Text style={S.companyDetail}>117246, г. Москва, Научный проезд, д. 19, пом. 51Т</Text>
+            <Text style={S.companyDetail}>ИНН 7728286559 / КПП 772801001 / ОГРН 1037728018074</Text>
+            <Text style={S.companyDetail}>Телефон: +7 (495) 445-55-20</Text>
           </View>
         </View>
 
-        <View style={styles.divider} />
+        {/* ── Исх. / Москва ───────────────────────────────────── */}
+        <View style={S.docMetaRow}>
+          <Text style={S.docMetaText}>Исх.: № ___ от «__» _______ 202__ г.</Text>
+          <Text style={S.docMetaText}>г. Москва</Text>
+        </View>
 
-        {/* Лицензии */}
+        {/* ── Кому ────────────────────────────────────────────── */}
+        <Text style={S.recipientLine}>
+          <Text style={{ fontWeight: 700 }}>Кому: </Text>
+          {calc.client_name || '—'}
+        </Text>
+        {calc.project_name ? (
+          <Text style={[S.recipientLine, { color: '#555555', marginBottom: 2 }]}>
+            <Text style={{ fontWeight: 700 }}>Проект: </Text>{calc.project_name}
+          </Text>
+        ) : null}
+        <Text style={[S.recipientLine, { color: '#555555' }]}>
+          <Text style={{ fontWeight: 700 }}>Дата: </Text>{formatDate(calc.created_at)}
+          {'   '}
+          <Text style={{ fontWeight: 700 }}>Тип: </Text>
+          {isPerpetual ? 'Бессрочные лицензии' : 'Годовые лицензии'}
+        </Text>
+
+        {/* ── Заголовок ───────────────────────────────────────── */}
+        <Text style={S.kpTitle}>Коммерческое предложение</Text>
+
+        {/* ── Вводный текст ───────────────────────────────────── */}
+        <Text style={S.introText}>
+          В ответ на Ваш запрос, просим рассмотреть ценовое предложение на ПО Смарт Принт.
+        </Text>
+
+        {/* ── Краткие итоги стоимостей ────────────────────────── */}
+        <View style={S.summaryBlock}>
+          {licenseTotal > 0 && (
+            <Text style={S.summaryLine}>
+              {'• '}Стоимость лицензий Смарт Принт{isPerpetual ? ' (бессрочных)' : ''} —{' '}
+              <Text style={{ fontWeight: 700 }}>{formatRub(licenseTotal)}</Text>
+              {' '}(без НДС)
+            </Text>
+          )}
+          {supportTotal > 0 && (
+            <Text style={S.summaryLine}>
+              {'• '}Стоимость технической поддержки Смарт Принт в год —{' '}
+              <Text style={{ fontWeight: 700 }}>{formatRub(supportTotal)}</Text>
+              {' '}(с НДС)
+            </Text>
+          )}
+          {hardwareTotal > 0 && (
+            <Text style={S.summaryLine}>
+              {'• '}Стоимость оборудования —{' '}
+              <Text style={{ fontWeight: 700 }}>{formatRub(hardwareTotal)}</Text>
+              {' '}(с НДС)
+            </Text>
+          )}
+          {worksTotal > 0 && (
+            <Text style={S.summaryLine}>
+              {'• '}Стоимость внедрения Смарт Принт —{' '}
+              <Text style={{ fontWeight: 700 }}>{formatRub(worksTotal)}</Text>
+              {' '}(с НДС, включая командировочные расходы)
+            </Text>
+          )}
+        </View>
+
+        {/* ── Лицензии ────────────────────────────────────────── */}
         {licenseItems.length > 0 && (
           <View>
-            <Text style={styles.sectionTitle}>Лицензии</Text>
-            <Text style={styles.sectionNote}>Цены без НДС</Text>
-            <View style={styles.table}>
+            <Text style={S.sectionTitle}>Лицензии</Text>
+            <Text style={S.sectionNote}>Цены без НДС</Text>
+            <View style={S.table}>
               <TableRows items={licenseItems} priceCol={priceCol} />
             </View>
           </View>
         )}
 
-        {/* Оборудование */}
-        {hardwareItems.length > 0 && (
-          <View>
-            <Text style={styles.sectionTitle}>Оборудование</Text>
-            <Text style={styles.sectionNote}>Цены с НДС</Text>
-            <View style={styles.table}>
-              <TableRows items={hardwareItems} priceCol={priceCol} />
-            </View>
-          </View>
-        )}
-
-        {/* Подбор ЦК */}
-        {calc.needs_cc && (
-          <View style={styles.ccBlock}>
-            <Text style={styles.ccText}>* Оборудование передано на подбор в Центр компетенций и будет добавлено в КП отдельно</Text>
-          </View>
-        )}
-
-        {/* Техподдержка */}
+        {/* ── Техническая поддержка ───────────────────────────── */}
         {supportItems.length > 0 && (
           <View>
-            <Text style={styles.sectionTitle}>Техническая поддержка</Text>
-            <Text style={styles.sectionNote}>Цены с НДС</Text>
-            <View style={styles.table}>
+            <Text style={S.sectionTitle}>Техническая поддержка</Text>
+            <Text style={S.sectionNote}>Цены с НДС</Text>
+            <View style={S.table}>
               <TableRows items={supportItems} priceCol={priceCol} />
             </View>
           </View>
         )}
 
-        {/* Итого */}
-        <View style={styles.totalsBlock}>
-          <View style={styles.totalCardHighlight}>
-            <Text style={styles.totalLabel}>
-              {priceCol === 'distributor' ? 'Итого (Дистрибьютор)' :
-               priceCol === 'rrp' ? 'Итого (РРЦ)' : 'Итого (Партнёр)'}
-            </Text>
-            <Text style={styles.totalValueHighlight}>
-              {priceCol === 'distributor' ? formatRub(calc.total_distributor) :
-               priceCol === 'rrp' ? formatRub(calc.total_rrp) : formatRub(calc.total_partner)}
+        {/* ── Оборудование (подбор ЦК) ────────────────────────── */}
+        {hardwareItems.length > 0 && (
+          <View>
+            <Text style={S.sectionTitle}>Оборудование</Text>
+            <Text style={S.sectionNote}>Цены с НДС</Text>
+            <View style={S.table}>
+              <TableRows items={hardwareItems} priceCol={priceCol} />
+            </View>
+          </View>
+        )}
+
+        {/* Сноска — ЦК ещё не подобрал оборудование */}
+        {calc.needs_cc && hardwareItems.length === 0 && (
+          <View style={S.ccBlock}>
+            <Text style={S.ccText}>
+              * Оборудование передано на подбор в Центр компетенций и будет добавлено в КП отдельно.
             </Text>
           </View>
+        )}
+
+        {/* ── Работы по внедрению (включая командировки) ───────── */}
+        {(worksItems.length > 0 || tripsItems.length > 0) && (
+          <View>
+            <Text style={S.sectionTitle}>Работы по внедрению</Text>
+            <Text style={S.sectionNote}>Цены с НДС</Text>
+            <View style={S.table}>
+              {worksItems.length > 0 && <WorksTableRows items={worksItems} />}
+              {tripsItems.length > 0 && (
+                <>
+                  {/* Разделитель если есть и работы и командировки */}
+                  {worksItems.length > 0 && (
+                    <View style={{ paddingHorizontal: 5, paddingVertical: 4 }}>
+                      <Text style={{ fontSize: 7, color: '#6b7280', fontWeight: 700 }}>Командировочные расходы</Text>
+                    </View>
+                  )}
+                  <View style={S.thead}>
+                    <Text style={[S.theadCell, { width: '70%' }]}>Описание</Text>
+                    <Text style={[S.theadCell, { width: '30%', textAlign: 'right' }]}>Сумма</Text>
+                  </View>
+                  {tripsItems.map((item, i) => (
+                    <View key={item.id ?? i} style={i % 2 === 0 ? S.trow : S.trowAlt}>
+                      <Text style={{ width: '70%', fontSize: 7.5 }}>{item.days} дн.</Text>
+                      <Text style={{ width: '30%', textAlign: 'right', fontSize: 7.5 }}>{formatRub(item.sum)}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ── Итого ────────────────────────────────────────────── */}
+        <View style={S.totalsBlock}>
+          <Text style={S.totalLine}>{totalLabel}: {formatRub(totalSum)}</Text>
+          <Text style={S.vatNote}>* Итоговая сумма включает лицензии (без НДС), оборудование и техподдержку (с НДС)</Text>
         </View>
 
-        <Text style={styles.vatNote}>* Итоговая сумма включает лицензии (без НДС), оборудование и техподдержку (с НДС)</Text>
+        {/* ── Срок действия ────────────────────────────────────── */}
+        <Text style={S.validityText}>Срок действия КП: 3 месяца.</Text>
 
-        {/* Футер */}
-        <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>Смарт Принт — Коммерческое предложение</Text>
-          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        {/* ── Подпись ──────────────────────────────────────────── */}
+        <View style={S.signatureBlock}>
+          <Text style={S.signatureLine}>
+            Генеральный директор ООО «ЙОДА»{'    '}_________________{' '}/ Владимиров Д.А. /
+          </Text>
+        </View>
+
+        {/* ── Нижний колонтитул (номер страницы) ───────────────── */}
+        <View style={S.pageFooter} fixed>
+          <Text style={S.pageFooterText}>ООО «ЙОДА» — Коммерческое предложение</Text>
+          <Text
+            style={S.pageFooterText}
+            render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}
+          />
         </View>
 
       </Page>

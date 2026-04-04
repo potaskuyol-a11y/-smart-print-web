@@ -321,7 +321,7 @@ export default function ImportDevicesPage() {
             {devices.some(d => d.needsInspection) && (
               <div className="mt-4 bg-amber-50 rounded-xl p-3">
                 <p className="text-xs text-amber-700">
-                  {devices.filter(d => d.needsInspection).length} устройств не найдено в реестре — требуется обследование
+                  {devices.filter(d => d.needsInspection).length} устройств требуют обследования
                 </p>
               </div>
             )}
@@ -377,9 +377,9 @@ export default function ImportDevicesPage() {
                         ) : device.warning ? (
                           <span className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded-lg">{device.warning}</span>
                         ) : device.inRegistry ? (
-                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg">В реестре</span>
+                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg">Обследован</span>
                         ) : (
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">Не в реестре</span>
+                          <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">Требует обследования</span>
                         )}
                       </td>
                     </tr>

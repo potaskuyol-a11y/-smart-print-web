@@ -1,8 +1,76 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+
+// ── Комбо-поле: выпадающий список + свободный ввод ─────────────────────────
+function ComboInput({ value, onChange, options, placeholder, inputClass }: {
+  value: string
+  onChange: (v: string) => void
+  options: string[]
+  placeholder?: string
+  inputClass?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [local, setLocal] = useState(value)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { setLocal(value) }, [value])
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  const handleFocus = () => {
+    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect())
+    setOpen(true)
+  }
+
+  const filtered = options.filter(o => !local || o.toLowerCase().includes(local.toLowerCase()))
+
+  const dropdown = open && filtered.length > 0 && rect ? createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        top: rect.bottom + 2,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 9999,
+      }}
+      className="bg-white border border-gray-200 rounded-lg shadow-xl max-h-52 overflow-y-auto"
+    >
+      {filtered.map(opt => (
+        <div key={opt}
+          onMouseDown={e => { e.preventDefault(); onChange(opt); setLocal(opt); setOpen(false) }}
+          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${opt === value ? 'font-medium text-blue-700 bg-blue-50' : 'text-gray-800'}`}>
+          {opt}
+        </div>
+      ))}
+    </div>,
+    document.body
+  ) : null
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        value={local}
+        placeholder={placeholder}
+        className={inputClass}
+        onChange={e => { setLocal(e.target.value); onChange(e.target.value); setOpen(true) }}
+        onFocus={handleFocus}
+      />
+      {dropdown}
+    </>
+  )
+}
 
 const FUNCTIONALITY_OPTIONS = [
   'Мониторинг по сети',
@@ -119,6 +187,12 @@ export default function CalculatorPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editLoading, setEditLoading] = useState(false)
 
+  // Bitrix24 deals
+  const [bitrixDeals, setBitrixDeals] = useState<{ id: string; title: string; stage: string }[]>([])
+  const [bitrixDealId, setBitrixDealId] = useState<string>('')
+  const [bitrixDealTitle, setBitrixDealTitle] = useState<string>('')
+  const [bitrixLoading, setBitrixLoading] = useState(false)
+
   const [clientName, setClientName] = useState('')
   const [projectName, setProjectName] = useState('')
   const [saleType, setSaleType] = useState('partner')
@@ -129,6 +203,8 @@ export default function CalculatorPage() {
   const [devices, setDevices] = useState<DeviceRow[]>([])
   const [hardware, setHardware] = useState<HardwareRow[]>([])
   const [needsCC, setNeedsCC] = useState(false)
+  const [partnerName, setPartnerName] = useState('')
+  const [distributorName, setDistributorName] = useState('')
 
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState('')
@@ -190,6 +266,28 @@ export default function CalculatorPage() {
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       if (prof) setUserRole(prof.role)
 
+      // Загружаем сделки Bitrix24
+      if (user.email) {
+        setBitrixLoading(true)
+        try {
+          const dealsRes = await fetch(`/api/bitrix/deals?email=${encodeURIComponent(user.email)}`)
+          if (dealsRes.ok) {
+            const dealsJson = await dealsRes.json()
+            if (Array.isArray(dealsJson.deals)) {
+              setBitrixDeals(dealsJson.deals.map((d: any) => ({
+                id: d.ID,
+                title: d.TITLE,
+                stage: d.STAGE_ID,
+              })))
+            }
+          }
+        } catch {
+          // Bitrix недоступен — работаем без сделок
+        } finally {
+          setBitrixLoading(false)
+        }
+      }
+
       const { data: p } = await supabase.from('price_list').select('*')
         .eq('category', 'license').eq('is_active', true)
       if (p) setPrices(p)
@@ -221,9 +319,15 @@ export default function CalculatorPage() {
         if (calcData) {
           setClientName(calcData.client_name || '')
           setProjectName(calcData.project_name || '')
+          if ((calcData as any).bitrix_deal_id) {
+            setBitrixDealId((calcData as any).bitrix_deal_id)
+            setBitrixDealTitle((calcData as any).bitrix_deal_title || '')
+          }
           setSaleType(calcData.sale_type || 'partner')
           setLicenseTerm(calcData.license_term || 'annual')
           setNeedsCC(calcData.needs_cc || false)
+          setPartnerName((calcData as any).partner_name || '')
+          setDistributorName((calcData as any).distributor_name || '')
 
           const etpItem = calcData.calculation_items?.find((i: any) => i.article === 'C1-ETP-20')
           if (etpItem) {
@@ -297,6 +401,14 @@ export default function CalculatorPage() {
     const newDevices = devices.filter(d => d.id !== id)
     setDevices(newDevices)
     autoSelectHardware(newDevices, hardwarePrices)
+    // Снимаем статус загруженного файла, если импортированных устройств больше нет
+    if (fileName && !newDevices.some(d => d.fromImport)) setFileName('')
+  }
+
+  const clearAllDevices = () => {
+    setDevices([])
+    setHardware([])
+    setFileName('')
   }
 
   const updateDevice = (id: string, field: keyof DeviceRow, value: any) => {
@@ -324,7 +436,7 @@ export default function CalculatorPage() {
             updated.inRegistry = false
             updated.needsInspection = true
             updated.maxAllowed = 'Тип 3'
-            updated.warning = 'Устройство не в реестре — требуется обследование'
+            updated.warning = 'Устройство требует обследования'
           }
         } else {
           updated.inRegistry = false
@@ -488,11 +600,14 @@ export default function CalculatorPage() {
   const priceColLabel = saleType === 'distributor' ? 'Дистрибьютор'
     : saleType === 'direct' ? 'РРЦ' : 'Партнёр'
 
+  const hasDeal = !!bitrixDealId
+
   const issues: string[] = []
   if (!clientName) issues.push('Укажите название клиента')
   const noFunc = devices.filter(d => !d.functionality)
   if (noFunc.length > 0) issues.push(`${noFunc.length} устройств без функционала`)
   if (totalQty === 0) issues.push('Нет устройств для расчёта')
+  if ((needsCC || licenseTerm === 'perpetual') && !hasDeal) issues.push('Для отправки на согласование необходимо выбрать сделку в Битрикс24')
   const canSave = issues.length === 0
   const needsApproval = licenseTerm === 'perpetual'
 
@@ -508,9 +623,13 @@ export default function CalculatorPage() {
       status: needsApproval || needsCC ? 'in_review' : 'draft',
       license_term: licenseTerm,
       needs_cc: needsCC,
+      partner_name: (saleType === 'partner' || saleType === 'distributor') ? (partnerName.trim() || null) : null,
+      distributor_name: saleType === 'distributor' ? (distributorName.trim() || null) : null,
       total_rrp: totals.rrp,
       total_partner: totals.partner,
       total_distributor: totals.distributor,
+      bitrix_deal_id: bitrixDealId || null,
+      bitrix_deal_title: bitrixDealTitle || null,
       ...(comment ? { manager_comment: comment } : {}),
     }
 
@@ -533,7 +652,7 @@ export default function CalculatorPage() {
 
     if (calcResult.length > 0) {
       await supabase.from('calculation_items').insert(
-        calcResult.map(r => ({ ...r, calculation_id: calcId }))
+        calcResult.map(({ description, ...r }: any) => ({ ...r, calculation_id: calcId }))
       )
     }
 
@@ -615,10 +734,42 @@ export default function CalculatorPage() {
                 placeholder="Название компании" />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">
+                Сделка в Битрикс24
+                {bitrixLoading && <span className="ml-2 text-xs text-gray-400">загружаем...</span>}
+              </label>
+              <select
+                value={bitrixDealId}
+                onChange={e => {
+                  const id = e.target.value
+                  setBitrixDealId(id)
+                  if (!id) {
+                    setBitrixDealTitle('')
+                    return
+                  }
+                  const deal = bitrixDeals.find(d => d.id === id)
+                  setBitrixDealTitle(deal?.title || '')
+                  // Автоматически заполняем поле "Проект" по названию сделки
+                  if (!projectName && deal) setProjectName(deal.title)
+                }}
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${!hasDeal && (needsCC || licenseTerm === 'perpetual') ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
+              >
+                <option value="">— Без проекта —</option>
+                {bitrixDeals.map(d => (
+                  <option key={d.id} value={d.id}>{d.title}</option>
+                ))}
+              </select>
+              {!hasDeal && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Без привязки к сделке недоступны: согласование, ЦК, экспорт Excel и PDF
+                </p>
+              )}
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-800 mb-1">Проект</label>
               <input value={projectName} onChange={e => setProjectName(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Название проекта" />
+                placeholder="Название проекта (необязательно)" />
             </div>
             {!isPartner && (
               <div>
@@ -629,6 +780,22 @@ export default function CalculatorPage() {
                   <option value="direct">Прямое (РРЦ)</option>
                   <option value="distributor">Дистрибьюторское</option>
                 </select>
+              </div>
+            )}
+            {!isPartner && (saleType === 'partner' || saleType === 'distributor') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Партнёр</label>
+                <input value={partnerName} onChange={e => setPartnerName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Название партнёра" />
+              </div>
+            )}
+            {!isPartner && saleType === 'distributor' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Дистрибьютор</label>
+                <input value={distributorName} onChange={e => setDistributorName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Название дистрибьютора" />
               </div>
             )}
             <div>
@@ -672,6 +839,12 @@ export default function CalculatorPage() {
                 ↑ {fileName ? 'Загрузить ещё' : 'Загрузить анкету'}
               </button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+              {devices.length > 0 && (
+                <button onClick={clearAllDevices}
+                  className="px-3 py-2 text-sm border border-red-200 rounded-lg text-red-600 hover:bg-red-50 transition-colors">
+                  Очистить всё
+                </button>
+              )}
               <button onClick={addDevice}
                 className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                 + Добавить устройство
@@ -719,16 +892,26 @@ export default function CalculatorPage() {
                         <tr key={device.id}
                           className={`border-b border-gray-100 ${!device.functionality ? 'bg-red-50' : device.warning ? 'bg-amber-50' : ''}`}>
                           <td className="py-2 px-3">
-                            <input value={device.manufacturer}
-                              onChange={e => updateDevice(device.id, 'manufacturer', e.target.value)}
+                            <ComboInput
+                              value={device.manufacturer}
+                              onChange={v => updateDevice(device.id, 'manufacturer', v)}
+                              options={[...new Set(registry.map((r: any) => r.manufacturer as string).filter(Boolean))].sort()}
                               placeholder="Производитель"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                              inputClass="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
                           </td>
                           <td className="py-2 px-3">
-                            <input value={device.model}
-                              onChange={e => updateDevice(device.id, 'model', e.target.value)}
+                            <ComboInput
+                              value={device.model}
+                              onChange={v => updateDevice(device.id, 'model', v)}
+                              options={registry
+                                .filter((r: any) => !device.manufacturer || r.manufacturer.toLowerCase() === device.manufacturer.toLowerCase())
+                                .map((r: any) => r.model as string)
+                                .filter(Boolean)
+                                .sort()}
                               placeholder="Модель"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                              inputClass="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
                           </td>
                           <td className="py-2 px-3">
                             <div className="relative group">
@@ -751,6 +934,7 @@ export default function CalculatorPage() {
                           <td className="py-2 px-3">
                             <input type="number" min={1}
                               value={device.quantity}
+                              onFocus={e => e.target.select()}
                               onChange={e => updateDevice(device.id, 'quantity', Number(e.target.value) || 1)}
                               className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 text-center focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           </td>
@@ -760,9 +944,9 @@ export default function CalculatorPage() {
                             ) : device.warning ? (
                               <span className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded-lg">{device.warning}</span>
                             ) : device.inRegistry ? (
-                              <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg">В реестре</span>
+                              <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg">Обследован</span>
                             ) : hasDevice ? (
-                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">Не в реестре</span>
+                              <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">Требует обследования</span>
                             ) : (
                               <span className="text-xs text-gray-400">—</span>
                             )}
@@ -802,11 +986,14 @@ export default function CalculatorPage() {
               </div>
               {summary['Тип 4'] > 0 && (
                 <div className="flex items-center gap-3">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" checked={needsCC} onChange={e => setNeedsCC(e.target.checked)} className="sr-only peer" />
+                  <label className={`relative inline-flex items-center ${hasDeal ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                    <input type="checkbox" checked={needsCC} onChange={e => hasDeal && setNeedsCC(e.target.checked)} className="sr-only peer" disabled={!hasDeal} />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                   </label>
-                  <span className="text-sm text-gray-700">Подбор через Центр компетенций</span>
+                  <span className={`text-sm ${hasDeal ? 'text-gray-700' : 'text-gray-400'}`}>
+                    Подбор через Центр компетенций
+                    {!hasDeal && <span className="ml-1 text-xs">(выберите сделку)</span>}
+                  </span>
                 </div>
               )}
             </div>
@@ -831,6 +1018,7 @@ export default function CalculatorPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <input type="number" min={0} value={h.quantity}
+                          onFocus={e => e.target.select()}
                           onChange={e => {
                             const qty = Number(e.target.value) || 0
                             const updated = [...hardware]

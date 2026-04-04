@@ -50,6 +50,11 @@ export default function ManagerPage() {
   const [comment, setComment] = useState('')
   const [processing, setProcessing] = useState(false)
   const [profile, setProfile] = useState<any>(null)
+  const [searchClient, setSearchClient] = useState('')
+  const [filterSaleType, setFilterSaleType] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -95,9 +100,13 @@ export default function ManagerPage() {
     await loadCalcs()
   }
 
-  const filtered = filter === 'in_review'
-    ? calculations.filter(c => c.status === 'in_review')
-    : calculations
+  const filtered = calculations
+    .filter(c => filter === 'in_review' ? c.status === 'in_review' : true)
+    .filter(c => searchClient ? (c.client_name || '').toLowerCase().includes(searchClient.toLowerCase()) : true)
+    .filter(c => filterSaleType ? c.sale_type === filterSaleType : true)
+    .filter(c => filterStatus ? c.status === filterStatus : true)
+    .filter(c => filterDateFrom ? new Date(c.created_at) >= new Date(filterDateFrom) : true)
+    .filter(c => filterDateTo ? new Date(c.created_at) <= new Date(filterDateTo + 'T23:59:59') : true)
 
   const pendingCount = calculations.filter(c => c.status === 'in_review').length
 
@@ -137,6 +146,38 @@ export default function ManagerPage() {
             className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${filter === 'all' ? 'bg-blue-600 text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
             Все КП
           </button>
+        </div>
+
+        {/* Панель фильтров */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input type="text" value={searchClient} onChange={e => setSearchClient(e.target.value)}
+            placeholder="Поиск по клиенту..."
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 w-48" />
+          <select value={filterSaleType} onChange={e => setFilterSaleType(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="">Все типы КП</option>
+            <option value="partner">Партнёрское</option>
+            <option value="direct">Прямое</option>
+            <option value="distributor">Дистрибьюторское</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="">Все статусы</option>
+            <option value="draft">Черновик</option>
+            <option value="in_review">На согласовании</option>
+            <option value="approved">Согласован</option>
+            <option value="sent">Отправлен</option>
+          </select>
+          <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          {(searchClient || filterSaleType || filterStatus || filterDateFrom || filterDateTo) && (
+            <button onClick={() => { setSearchClient(''); setFilterSaleType(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }}
+              className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50">
+              Сбросить
+            </button>
+          )}
         </div>
 
         {filtered.length === 0 ? (
