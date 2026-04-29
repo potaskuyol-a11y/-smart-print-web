@@ -7,23 +7,37 @@ const WEBHOOK = process.env.BITRIX_WEBHOOK_URL?.replace(/\/$/, '') ?? '';
 
 /**
  * Порядок активных стадий (от самой ранней к поздней).
- * Excel разрешён с индекса 0 (NEW и выше).
- * PDF  разрешён с индекса 3 (EXECUTING и выше).
+ * Excel разрешён с индекса 0 (NEED_ANALYSIS и выше).
+ * PDF  разрешён с индекса 4 (EXECUTING и выше).
+ *
+ * Актуальные названия на портале (Воронка продаж, CAT=0):
+ *   NEED_ANALYSIS      SORT=5   — Выявление потребности  [добавлена 2026-04-05]
+ *   NEW                SORT=10  — Клиент на пресейл
+ *   PREPARATION        SORT=20  — Бюджетная оценка
+ *   PREPAYMENT_INVOICE SORT=30  — ПИЛОТ/Тестирование
+ *   EXECUTING          SORT=40  — Подготовка/согласование КП
+ *   FINAL_INVOICE      SORT=50  — Заключение договора
+ *   UC_0EI5CM          SORT=60  — Отгрузка
+ *   UC_10HZUC          SORT=70  — Акт подписан
+ *   UC_GUH39B          SORT=80  — Апсейл
  */
 export const ACTIVE_STAGE_ORDER = [
+  'NEED_ANALYSIS',      // Выявление потребности
   'NEW',                // Клиент на пресейл
-  'PREPARATION',        // Выявление потребности
-  'PREPAYMENT_INVOICE', // Демо/пилот
+  'PREPARATION',        // Бюджетная оценка
+  'PREPAYMENT_INVOICE', // ПИЛОТ/Тестирование
   'EXECUTING',          // Подготовка/согласование КП
-  'FINAL_INVOICE',      // Согласование договора
-  'UC_0EI5CM',          // Договор подписан
+  'FINAL_INVOICE',      // Заключение договора
+  'UC_0EI5CM',          // Отгрузка
+  'UC_10HZUC',          // Акт подписан
+  'UC_GUH39B',          // Апсейл
 ];
 
 /**
  * Стадии, при которых сделка считается закрытой/неактивной.
  * После них нельзя создавать новые расчёты и делать экспорт.
  */
-export const INACTIVE_STAGES = ['UC_10HZUC', 'WON', 'LOSE', 'APOLOGY'];
+export const INACTIVE_STAGES = ['WON', 'LOSE', 'APOLOGY', '1', '2', '3', '4', '5', '6'];
 
 /** Индекс стадии в активной цепочке (-1 если нет или неактивна) */
 export function stageIndex(stageId: string): number {
@@ -35,16 +49,16 @@ export function isDealActive(stageId: string): boolean {
   return !INACTIVE_STAGES.includes(stageId);
 }
 
-/** Разрешён ли Excel (стадия NEW и выше) */
+/** Разрешён ли Excel (стадия NEED_ANALYSIS и выше) */
 export function canExcel(stageId: string): boolean {
   const idx = stageIndex(stageId);
   return idx >= 0;
 }
 
-/** Разрешён ли PDF (стадия EXECUTING и выше) */
+/** Разрешён ли PDF (стадия EXECUTING и выше, idx=4) */
 export function canPdf(stageId: string): boolean {
   const idx = stageIndex(stageId);
-  return idx >= 3;
+  return idx >= 4;
 }
 
 // ---------------------------------------------------------------------------
